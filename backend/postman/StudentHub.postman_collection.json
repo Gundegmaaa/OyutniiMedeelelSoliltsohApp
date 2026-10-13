@@ -1,0 +1,838 @@
+{
+  "info": {
+    "_postman_id": "ef72e964-a606-48fc-88ec-c1e8a3af8a8b",
+    "name": "Student Hub — email authentication",
+    "description": "Local Django API integration tests. Import the companion environment and send requests in numbered order. Read email OTPs from the backend terminal (console email backend) and enter registration_code/login_code before the corresponding verify requests. All requests target base_url only; API tokens are captured into the active environment. Restart with 01 Health to generate a fresh test email.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.info.requestName === \"01 Health\") {",
+          "  pm.environment.set(\"email\", \"postman-\" + Date.now() + \"@example.com\");",
+          "  [",
+          "    \"registration_code\", \"login_code\", \"wrong_registration_code\",",
+          "    \"register_challenge_id\", \"login_challenge_id\", \"register_session_token\",",
+          "    \"session_token\", \"second_session_token\", \"device_token\", \"device_id\", \"user_id\"",
+          "  ].forEach(function (key) { pm.environment.set(key, \"\"); });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/health/",
+        "description": "Эхний хүсэлт. Шинэ туршилтын мэйл үүсгэж, өмнөх run-ийн код/token утгуудыг цэвэрлэнэ.",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Backend is healthy\", function () { pm.expect(data.status).to.equal(\"ok\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/register/",
+        "description": "Send дараа backend terminal дахь бүртгэлийн зургаан оронтой кодыг environment-ийн registration_code утгад оруулна.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"full_name\": \"{{full_name}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 202\", function () { pm.response.to.have.status(202); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Registration needs email verification\", function () {",
+              "  pm.expect(data.verification_required).to.equal(true);",
+              "  pm.expect(data.purpose).to.equal(\"register\");",
+              "  pm.expect(data.challenge_id).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.expires_in).to.be.above(0);",
+              "  pm.expect(data.resend_after).to.be.above(0);",
+              "});",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "if (pm.response.code === 202) pm.environment.set(\"register_challenge_id\", data.challenge_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Resend cooldown",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/resend-code/",
+        "description": "02 Register-ийн дараа 60 секундийн дотор явуулна.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"{{register_challenge_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 429\", function () { pm.response.to.have.status(429); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Immediate resend is rate limited\", function () {",
+              "  pm.expect(data.error).to.equal(\"resend_too_soon\");",
+              "  pm.expect(data.retry_after).to.be.above(0);",
+              "  pm.expect(Number(pm.response.headers.get(\"Retry-After\"))).to.be.above(0);",
+              "});",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Wrong registration code",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/register/verify/",
+        "description": "registration_code-оос ялгаатай код автоматаар сонгоно; эхлээд бодит кодоо environment-д оруулсан байна.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"{{register_challenge_id}}\",\n  \"code\": \"{{wrong_registration_code}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = String(pm.environment.get(\"registration_code\") || \"\");",
+              "if (!/^[0-9]{6}$/.test(code)) {",
+              "  throw new Error(\"Copy the six-digit email code from the backend terminal into the registration_code environment variable, then send again.\");",
+              "}",
+              "pm.environment.set(\"wrong_registration_code\", code === \"000000\" ? \"111111\" : \"000000\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\", function () { pm.response.to.have.status(400); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Incorrect code is rejected\", function () { pm.expect(data.error).to.equal(\"invalid_code\"); });",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Register verify",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/register/verify/",
+        "description": "Бүртгэлийн terminal/email OTP-г registration_code утгад оруулж 10 минутын дотор батална.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"{{register_challenge_id}}\",\n  \"code\": \"{{registration_code}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = String(pm.environment.get(\"registration_code\") || \"\");",
+              "if (!/^[0-9]{6}$/.test(code)) {",
+              "  throw new Error(\"Copy the six-digit email code from the backend terminal into the registration_code environment variable, then send again.\");",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Verified user receives a Bearer session\", function () {",
+              "  pm.expect(data.token).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.token_type).to.equal(\"Bearer\");",
+              "  pm.expect(data.expires_in).to.be.above(0);",
+              "  pm.expect(data.user.email).to.equal(pm.environment.get(\"email\"));",
+              "  pm.expect(data.user.email_verified).to.equal(true);",
+              "  pm.expect(data.user).not.to.have.property(\"password\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "if (pm.response.code === 200) {",
+              "  pm.environment.set(\"register_session_token\", data.token);",
+              "  pm.environment.set(\"session_token\", data.token);",
+              "  pm.environment.set(\"user_id\", String(data.user.id));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Duplicate register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/register/",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"full_name\": \"{{full_name}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\", function () { pm.response.to.have.status(409); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Verified email cannot be registered twice\", function () { pm.expect(data.error).to.equal(\"email_exists\"); });",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Login with remember device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/login/",
+        "description": "Send дараа terminal дахь НЭВТРЭХ шинэ кодыг login_code утгад оруулна. registration_code-оос өөр challenge.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"remember_device\": true,\n  \"device_name\": \"Postman test device\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 202\", function () { pm.response.to.have.status(202); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Login needs a fresh email code\", function () {",
+              "  pm.expect(data.verification_required).to.equal(true);",
+              "  pm.expect(data.purpose).to.equal(\"login\");",
+              "  pm.expect(data.challenge_id).to.be.a(\"string\").and.not.empty;",
+              "});",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "if (pm.response.code === 202) pm.environment.set(\"login_challenge_id\", data.challenge_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Login verify",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/login/verify/",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"challenge_id\": \"{{login_challenge_id}}\",\n  \"code\": \"{{login_code}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = String(pm.environment.get(\"login_code\") || \"\");",
+              "if (!/^[0-9]{6}$/.test(code)) {",
+              "  throw new Error(\"Copy the six-digit email code from the backend terminal into the login_code environment variable, then send again.\");",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Verified user receives a Bearer session\", function () {",
+              "  pm.expect(data.token).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.token_type).to.equal(\"Bearer\");",
+              "  pm.expect(data.expires_in).to.be.above(0);",
+              "  pm.expect(data.user.email).to.equal(pm.environment.get(\"email\"));",
+              "  pm.expect(data.user.email_verified).to.equal(true);",
+              "  pm.expect(data.user).not.to.have.property(\"password\");",
+              "});",
+              "pm.test(\"Remembered device credentials are issued after email verification\", function () {",
+              "  pm.expect(data.device_token).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.device_id).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.device_expires_in).to.be.above(0);",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "if (pm.response.code === 200) {",
+              "  pm.environment.set(\"session_token\", data.token);",
+              "  pm.environment.set(\"device_token\", data.device_token);",
+              "  pm.environment.set(\"device_id\", data.device_id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Me",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/me/",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{session_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Session belongs to the verified test user\", function () {",
+              "  pm.expect(String(data.id)).to.equal(pm.environment.get(\"user_id\"));",
+              "  pm.expect(data.email).to.equal(pm.environment.get(\"email\"));",
+              "  pm.expect(data.email_verified).to.equal(true);",
+              "  pm.expect(data).not.to.have.property(\"password\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Devices",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/devices/",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{session_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Remembered device metadata is listed without its secret\", function () {",
+              "  pm.expect(data).to.be.an(\"array\");",
+              "  const device = data.find(function (entry) { return entry.id === pm.environment.get(\"device_id\"); });",
+              "  pm.expect(device).to.be.an(\"object\");",
+              "  pm.expect(device.name).to.equal(\"Postman test device\");",
+              "  pm.expect(device).not.to.have.property(\"token_hash\");",
+              "  pm.expect(device).not.to.have.property(\"device_token\");",
+              "  pm.expect(pm.response.text()).not.to.include(pm.environment.get(\"device_token\"));",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Remembered login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/login/",
+        "description": "Зөв нууц үг + device_token нь мэйл OTP дахин шаардахгүй. Эхний device session-ийг session_token-д хэвээр хадгална.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"device_token\": \"{{device_token}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Verified user receives a Bearer session\", function () {",
+              "  pm.expect(data.token).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(data.token_type).to.equal(\"Bearer\");",
+              "  pm.expect(data.expires_in).to.be.above(0);",
+              "  pm.expect(data.user.email).to.equal(pm.environment.get(\"email\"));",
+              "  pm.expect(data.user.email_verified).to.equal(true);",
+              "  pm.expect(data.user).not.to.have.property(\"password\");",
+              "});",
+              "pm.test(\"Trusted device signs in without another email challenge\", function () {",
+              "  pm.expect(data).not.to.have.property(\"challenge_id\");",
+              "  pm.expect(data).not.to.have.property(\"verification_required\");",
+              "  pm.expect(data.device_id).to.equal(pm.environment.get(\"device_id\"));",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "if (pm.response.code === 200) pm.environment.set(\"second_session_token\", data.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Logout and forget device",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/logout/",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{session_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"forget_device\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", function () { pm.response.to.have.status(204); });",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "pm.test(\"Logout response has no body\", function () { pm.expect(pm.response.text()).to.equal(\"\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 Revoked second session",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/me/",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{second_session_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Forgetting a device revokes its other sessions\", function () {",
+              "  pm.expect(data.error).to.equal(\"authentication_failed\");",
+              "  pm.expect(data).not.to.have.property(\"email\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 Unauthenticated me",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/me/",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Private user information needs a Bearer token\", function () {",
+              "  pm.expect(data.error).to.equal(\"not_authenticated\");",
+              "  pm.expect(data).not.to.have.property(\"email\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 Invalid password",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/login/",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"WrongPassword!123\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });",
+              "const data = pm.response.json();",
+              "pm.test(\"Wrong password cannot start email verification\", function () { pm.expect(data.error).to.equal(\"invalid_credentials\"); });",
+              "pm.test(\"No session or email code is returned\", function () {",
+              "  pm.expect(data).not.to.have.property(\"token\");",
+              "  pm.expect(data).not.to.have.property(\"code\");",
+              "  pm.expect(data).not.to.have.property(\"otp\");",
+              "});",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 Logout registration session",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/auth/logout/",
+        "description": "Энэ run-ийн бүртгүүлэх үед авсан тусдаа session-ийг хаана.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{register_session_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"forget_device\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", function () { pm.response.to.have.status(204); });",
+              "pm.test(\"Authentication response is not cached\", function () { pm.expect(pm.response.headers.get(\"Cache-Control\")).to.equal(\"no-store\"); });",
+              "pm.test(\"Registration session is cleaned up\", function () { pm.expect(pm.response.text()).to.equal(\"\"); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

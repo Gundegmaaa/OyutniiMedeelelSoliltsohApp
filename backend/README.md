@@ -210,6 +210,8 @@ Validation алдаа `fields`-тэй; хүлээлттэй алдаа `retry_af
 
 ## Flutter холбох
 
+Postman-аар API шалгах collection, environment болон алхмууд: [postman/README.md](postman/README.md).
+
 Flutter-ийн login/register UI нь дээрх API-г дуудах хэрэгтэй.
 Web хөгжүүлэлтэд тогтмол port ашиглана:
 
