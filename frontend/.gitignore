@@ -4,6 +4,7 @@
 .packages
 build/
 coverage/
+.artifacts/
 *.iml
 .idea/
 android/local.properties

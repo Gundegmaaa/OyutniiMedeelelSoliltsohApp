@@ -3,7 +3,8 @@ import '../theme.dart';
 import '../widgets/ui.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.displayName = 'Гүндэгмаа'});
+  final String displayName;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -22,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.fromLTRB(26, 18, 26, 36),
     children: [
-      const Text(
-        'Сайн байна уу, Гүндэгмаа 👋',
-        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+      Text(
+        'Сайн байна уу, ${widget.displayName} 👋',
+        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
       ),
       const SizedBox(height: 58),
       const SectionTitle('Шинэ зарлал'),
