@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "accounts.apps.AccountsConfig",
+    "add_post",
+    "login",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -58,23 +60,24 @@ TEMPLATES = [{
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# SQLite gets the team running immediately; PostgreSQL uses the same migrations.
-DB_ENGINE = os.getenv("DB_ENGINE", "sqlite")
-if DB_ENGINE == "postgresql":
-    DATABASES = {"default": {
+# PostgreSQL - Neon Database
+DATABASES = {
+    "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "student_news"),
-        "USER": os.getenv("POSTGRES_USER", "student_news"),
+        "NAME": os.getenv("POSTGRES_DB", "neondb"),
+        "USER": os.getenv("POSTGRES_USER", "neondb_owner"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+        "HOST": os.getenv(
+            "POSTGRES_HOST",
+            "ep-late-water-b5ii7prk.c-7.us-east-2.aws.neon.tech",
+        ),
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
         "CONN_MAX_AGE": 60,
-        "OPTIONS": {"sslmode": os.getenv("POSTGRES_SSLMODE", "prefer")},
-    }}
-elif DB_ENGINE == "sqlite" and DEBUG:
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
-else:
-    raise ImproperlyConfigured("Use DB_ENGINE=postgresql in production; sqlite is development only.")
+        "OPTIONS": {
+            "sslmode": "require",
+        },
+    }
+}
 
 AUTH_USER_MODEL = "accounts.User"
 AUTH_PASSWORD_VALIDATORS = [
