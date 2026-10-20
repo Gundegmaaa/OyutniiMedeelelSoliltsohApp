@@ -124,17 +124,11 @@ SECURE_HSTS_PRELOAD = not DEBUG
 if not DEBUG and (not SESSION_COOKIE_SECURE or SESSION_COOKIE_SAMESITE not in {"Lax", "Strict", "None"}):
     raise ImproperlyConfigured("Production requires secure cookies and a valid COOKIE_SAMESITE.")
 
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
-EMAIL_TIMEOUT = 10
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Student News <noreply@example.com>")
-EMAIL_CODE_TTL_SECONDS = 600
-EMAIL_RESEND_COOLDOWN_SECONDS = 60
-EMAIL_CODE_MAX_ATTEMPTS = 5
-if not DEBUG and (EMAIL_BACKEND != "django.core.mail.backends.smtp.EmailBackend" or EMAIL_HOST == "localhost" or DEFAULT_FROM_EMAIL.endswith("example.com>")):
-    raise ImproperlyConfigured("Configure real SMTP EMAIL_HOST and DEFAULT_FROM_EMAIL in production.")
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+EMAIL_HOST_USER = os.getenv("GMAIL_EMAIL")
+EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
