@@ -1,5 +1,6 @@
 
 import secrets
+import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -16,20 +17,29 @@ from rest_framework import status
 
 from .models import TblUser
 
+logger = logging.getLogger(__name__)
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register_service(request):
     data = request.data
 
-    st_code = str(data.get("st_code", "")).strip()
-    lastname = str(data.get("user_lastname", "")).strip()
-    firstname = str(data.get("user_firstname", "")).strip()
+    st_code = str(data.get("student_code", data.get("st_code", ""))).strip().upper()
+    lastname = str(data.get("last_name", data.get("user_lastname", ""))).strip()
+    firstname = str(data.get("first_name", data.get("user_firstname", ""))).strip()
     email = str(data.get("email", "")).strip().lower()
     password = data.get("password", "")
 
-    course_id = data.get("course_id")
+    course_id = data.get("course", data.get("course_id"))
     phone_number = data.get("phone_number")
+    password_confirm = data.get("password_confirm")
+
+    if password_confirm is not None and password_confirm != password:
+        return Response(
+            {"success": False, "message": "Нууц үг таарахгүй байна."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     pro_index = str(data.get("pro_index", "")).strip() or None
     user_point = str(data.get("user_point", "")).strip() or None
@@ -128,6 +138,7 @@ def register_service(request):
             "code_hash": make_password(code),
             "expires_at": timezone.now().timestamp() + 600,
             "attempts": 0,
+            "last_sent_at": timezone.now().timestamp(),
         }
 
         send_mail(
@@ -165,6 +176,7 @@ def register_service(request):
         )
 
     except Exception:
+        logger.exception("Registration email delivery failed")
         request.session.pop("pending_registration", None)
 
         return Response(
@@ -180,6 +192,8 @@ def register_service(request):
 @permission_classes([AllowAny])
 def verify_registration(request):
     code = str(request.data.get("code", "")).strip()
+    email = str(request.data.get("email", "")).strip().lower()
+    password = request.data.get("password")
     pending = request.session.get("pending_registration")
 
     if not pending:
@@ -188,6 +202,19 @@ def verify_registration(request):
                 "success": False,
                 "message": "Бүртгэлийн хүсэлт олдсонгүй. Дахин бүртгүүлнэ үү.",
             },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if email and email != pending["email"]:
+        return Response(
+            {"success": False, "message": "Бүртгэлийн имэйл таарахгүй байна."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if password is not None and not check_password(
+        password, pending["password_hash"]
+    ):
+        return Response(
+            {"success": False, "message": "Нууц үг таарахгүй байна."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -299,3 +326,51 @@ def verify_registration(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def resend_verification(request):
+    email = str(request.data.get("email", "")).strip().lower()
+    pending = request.session.get("pending_registration")
+    if not pending:
+        return Response(
+            {"success": False, "message": "Баталгаажуулах бүртгэл олдсонгүй."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if email != pending["email"]:
+        return Response(
+            {"success": False, "message": "Бүртгэлийн имэйл таарахгүй байна."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    now = timezone.now().timestamp()
+    if now - pending.get("last_sent_at", 0) < 60:
+        return Response(
+            {"success": False, "message": "Дахин илгээхээс өмнө түр хүлээнэ үү."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": "60"},
+        )
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    pending["code_hash"] = make_password(code)
+    pending["expires_at"] = now + 600
+    pending["last_sent_at"] = now
+    pending["attempts"] = 0
+    request.session["pending_registration"] = pending
+    request.session.modified = True
+    try:
+        send_mail(
+            subject="Имэйл баталгаажуулах код",
+            message=f"Таны баталгаажуулах код: {code}\nКод 10 минут хүчинтэй.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Verification email resend failed")
+        return Response(
+            {"success": False, "message": "Имэйл илгээж чадсангүй."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return Response({"detail": "Баталгаажуулах код дахин илгээгдлээ."}, status=202)

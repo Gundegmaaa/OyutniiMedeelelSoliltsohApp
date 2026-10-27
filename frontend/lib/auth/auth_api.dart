@@ -32,15 +32,38 @@ class AuthApi {
   })  : _baseUrl = (baseUrl ??
             const String.fromEnvironment(
               'API_BASE_URL',
-              defaultValue: 'http://localhost:8000',
+              defaultValue: 'https://oyutniimedeelelsoliltsohapp-1.onrender.com',
             ))
             .replaceAll(RegExp(r'/+$'), ''),
         _client = client ?? createAuthHttpClient();
 
   final String _baseUrl;
   final http.Client _client;
+  String? _csrfToken;
 
   static const _requestTimeout = Duration(seconds: 20);
+
+  Future<AuthUser?> currentUser() async {
+    try {
+      return _user(await _request('GET', 'me'));
+    } on AuthApiException catch (error) {
+      if (error.statusCode == 401) return null;
+      rethrow;
+    }
+  }
+
+  Future<void> logout() async {
+    await _request('POST', 'logout', body: const {});
+    _csrfToken = null;
+  }
+
+  Future<void> resendVerification({required String email}) async {
+    await _request(
+      'POST',
+      'resend-verification',
+      body: {'email': email.trim()},
+    );
+  }
 
   /// Бүртгэл
   Future<void> register({
@@ -57,10 +80,10 @@ class AuthApi {
       'register',
       body: {
         'email': email.trim(),
-        'student_code': studentCode.trim().toUpperCase(),
-        'first_name': firstName.trim(),
-        'last_name': lastName.trim(),
-        'course': course,
+        'st_code': studentCode.trim().toUpperCase(),
+        'user_firstname': firstName.trim(),
+        'user_lastname': lastName.trim(),
+        'course_id': course,
         'password': password,
         'password_confirm': passwordConfirm,
       },
@@ -109,6 +132,14 @@ class AuthApi {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
+    if (method != 'GET' && endpoint != 'csrf' && _csrfToken == null) {
+      final csrf = await _request('GET', 'csrf');
+      _csrfToken = csrf['csrf_token'] as String?;
+      if (_csrfToken == null || _csrfToken!.isEmpty) {
+        throw _invalidResponse();
+      }
+    }
+
     final uri = Uri.parse(
       '$_baseUrl/api/v1/auth/$endpoint/',
     );
@@ -117,6 +148,9 @@ class AuthApi {
       ..followRedirects = false;
 
     request.headers['Accept'] = 'application/json';
+    if (method != 'GET' && _csrfToken != null) {
+      request.headers['X-CSRFToken'] = _csrfToken!;
+    }
 
     if (body != null) {
       request.headers['Content-Type'] =
@@ -164,6 +198,11 @@ class AuthApi {
 
     if (data == null) {
       throw _invalidResponse(response.statusCode);
+    }
+
+    final rotatedToken = data['csrf_token'];
+    if (rotatedToken is String && rotatedToken.isNotEmpty) {
+      _csrfToken = rotatedToken;
     }
 
     return data;
