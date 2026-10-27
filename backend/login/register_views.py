@@ -95,7 +95,16 @@ def register_service(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not settings.RESEND_API_KEY or not settings.EMAIL_FROM:
+    gmail_email_configured = all(
+        (
+            settings.GMAIL_EMAIL,
+            settings.GOOGLE_CLIENT_ID,
+            settings.GOOGLE_CLIENT_SECRET,
+            settings.GOOGLE_REFRESH_TOKEN,
+        )
+    )
+    resend_configured = settings.RESEND_API_KEY and settings.EMAIL_FROM
+    if not gmail_email_configured and not resend_configured:
         return Response(
             {
                 "success": False,
