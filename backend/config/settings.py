@@ -97,7 +97,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("POSTGRES_DB", "neondb"),
         "USER": os.getenv("POSTGRES_USER", "neondb_owner"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "npg_tmlBV8sjgY5a"),
         "HOST": os.getenv(
             "POSTGRES_HOST",
             "ep-late-water-b5ii7prk.c-7.us-east-2.aws.neon.tech",
@@ -175,18 +175,15 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+CORS_ALLOWED_ORIGINS = [
+    "https://oyutnii-medeelel-frontend.onrender.com",
+]
 
-# CORS
-CORS_ALLOWED_ORIGINS = env_list(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,http://localhost:8000",
-)
+CSRF_TRUSTED_ORIGINS = [
+    "https://oyutnii-medeelel-frontend.onrender.com",
+]
+
 CORS_ALLOW_CREDENTIALS = True
-
-CSRF_TRUSTED_ORIGINS = env_list(
-    "CSRF_TRUSTED_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,http://localhost:8000",
-)
 
 
 # Sessions and cookies

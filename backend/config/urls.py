@@ -1,31 +1,14 @@
 
-from django.contrib import admin
 from django.urls import path
-
-from login.views import login_service
-from login.register_views import (
-    register_service,
-    verify_registration,
-)
+from .views import login_service
+from .register_views import register_service, verify_registration
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-
+    path("login/", login_service, name="login"),
+    path("register/", register_service, name="register"),
     path(
-        "api/v1/auth/login/",
-        login_service,
-        name="login",
-    ),
-
-    path(
-        "api/v1/auth/register/",
-        register_service,
-        name="register",
-    ),
-
-    path(
-        "api/v1/auth/verify-email/",
+        "register/verify/",
         verify_registration,
-        name="verify-email",
+        name="verify_registration",
     ),
 ]
