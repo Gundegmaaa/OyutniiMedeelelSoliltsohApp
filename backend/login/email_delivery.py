@@ -34,8 +34,15 @@ def send_verification_email(*, recipient, subject, message):
                     f"Resend rejected the email with status {response.status}."
                 )
     except HTTPError as error:
+        error_body = error.read().decode("utf-8", errors="replace")
+        try:
+            error_data = json.loads(error_body)
+        except json.JSONDecodeError:
+            error_data = {}
+        detail = error_data.get("message") or error_data.get("name")
         raise RuntimeError(
-            f"Resend rejected the email with status {error.code}."
+            f"Resend rejected the email with status {error.code}: "
+            f"{detail or 'No error details returned.'}"
         ) from error
     except (TimeoutError, URLError, OSError) as error:
         raise RuntimeError("Could not reach Resend email API.") from error
