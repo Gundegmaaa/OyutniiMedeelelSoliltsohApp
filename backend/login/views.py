@@ -13,14 +13,16 @@ from .models import TblUser
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login_service(request):
+    # Хүсэлтээс имэйл, нууц үг авах
     email = request.data.get("email", "")
     password = request.data.get("password", "")
 
+    # Оролтын утгууд шалгах
     if not isinstance(email, str) or not isinstance(password, str):
         return Response(
             {
                 "success": False,
-                "message": "Имэйл болон нууц үгээ зөв оруулна уу.",
+                "message": "Имэйл болон нууц үгээ зөв оруулна уу."
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
@@ -31,12 +33,13 @@ def login_service(request):
         return Response(
             {
                 "success": False,
-                "message": "Имэйл болон нууц үгээ оруулна уу.",
+                "message": "Имэйл болон нууц үгээ оруулна уу."
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
+        # Одоо байгаа tbl_user хүснэгтээс хэрэглэгч хайх
         user = TblUser.objects.filter(
             email__iexact=email
         ).first()
@@ -45,21 +48,19 @@ def login_service(request):
             return Response(
                 {
                     "success": False,
-                    "message": "Имэйл эсвэл нууц үг буруу байна.",
+                    "message": "Имэйл эсвэл нууц үг буруу байна."
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        try:
-            valid_password = check_password(
-                password,
-                user.password,
-            )
-        except (TypeError, ValueError):
-            valid_password = False
+        # Шинэ бүртгэлийн hash нууц үгийг шалгах
+        valid_password = check_password(
+            password,
+            user.password
+        )
 
-        # Хуучин нууц үг plain text байсан тохиолдол.
-        # Зөвхөн хуучин өгөгдөл үнэхээр ийм бол түр нийцүүлж хэрэглэнэ.
+        # Хуучин хэрэглэгчийн нууц үг энгийн текст байвал
+        # зөв таарсан үед hash хэлбэрт шилжүүлэх
         if not valid_password and user.password == password:
             user.password = make_password(password)
             user.save(update_fields=["password"])
@@ -69,11 +70,12 @@ def login_service(request):
             return Response(
                 {
                     "success": False,
-                    "message": "Имэйл эсвэл нууц үг буруу байна.",
+                    "message": "Имэйл эсвэл нууц үг буруу байна."
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
+        # Амжилттай нэвтэрсэн хариу
         return Response(
             {
                 "success": True,
@@ -95,7 +97,7 @@ def login_service(request):
         return Response(
             {
                 "success": False,
-                "message": "Өгөгдлийн сантай холбогдоход алдаа гарлаа.",
+                "message": "Өгөгдлийн сантай холбогдоход алдаа гарлаа."
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
