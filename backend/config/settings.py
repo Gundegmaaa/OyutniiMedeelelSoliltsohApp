@@ -21,7 +21,7 @@ DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "development-only-change-this-key-before-deploying")
 if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY.startswith("development-only")):
     raise ImproperlyConfigured("Set a random DJANGO_SECRET_KEY of at least 50 characters.")
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
+ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
