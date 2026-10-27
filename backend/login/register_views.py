@@ -3,7 +3,6 @@ import secrets
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import make_password, check_password
@@ -16,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import TblUser
+from .email_delivery import send_verification_email
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +95,13 @@ def register_service(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
+    if not settings.RESEND_API_KEY or not settings.EMAIL_FROM:
         return Response(
             {
                 "success": False,
-                "message": "Gmail SMTP тохиргоо хийгдээгүй байна.",
+                "message": "Имэйл үйлчилгээ сервер дээр тохируулаагүй байна.",
             },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     try:
@@ -141,7 +141,7 @@ def register_service(request):
             "last_sent_at": timezone.now().timestamp(),
         }
 
-        send_mail(
+        send_verification_email(
             subject="Имэйл баталгаажуулах код",
             message=(
                 f"Сайн байна уу, {firstname}!\n\n"
@@ -149,9 +149,7 @@ def register_service(request):
                 "Код 10 минутын хугацаанд хүчинтэй.\n"
                 "Хэрэв та хүсэлт гаргаагүй бол энэ имэйлийг үл тооно уу."
             ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+            recipient=email,
         )
 
         return Response(
@@ -182,7 +180,7 @@ def register_service(request):
         return Response(
             {
                 "success": False,
-                "message": "Имэйл илгээж чадсангүй. Gmail SMTP тохиргоогоо шалгана уу.",
+                "message": "Имэйл илгээж чадсангүй. Дахин оролдоно уу.",
             },
             status=status.HTTP_502_BAD_GATEWAY,
         )
@@ -360,12 +358,10 @@ def resend_verification(request):
     request.session["pending_registration"] = pending
     request.session.modified = True
     try:
-        send_mail(
+        send_verification_email(
             subject="Имэйл баталгаажуулах код",
             message=f"Таны баталгаажуулах код: {code}\nКод 10 минут хүчинтэй.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+            recipient=email,
         )
     except Exception:
         logger.exception("Verification email resend failed")

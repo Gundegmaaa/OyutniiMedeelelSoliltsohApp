@@ -219,12 +219,6 @@ if not DEBUG and (
     )
 
 
-# Gmail SMTP
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-
-EMAIL_HOST_USER = os.getenv("GMAIL_EMAIL")
-EMAIL_HOST_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+EMAIL_TIMEOUT = 8
