@@ -95,6 +95,7 @@ def register_service(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    brevo_configured = settings.BREVO_API_KEY and settings.BREVO_SENDER_EMAIL
     gmail_email_configured = all(
         (
             settings.GMAIL_EMAIL,
@@ -104,7 +105,7 @@ def register_service(request):
         )
     )
     resend_configured = settings.RESEND_API_KEY and settings.EMAIL_FROM
-    if not gmail_email_configured and not resend_configured:
+    if not brevo_configured and not gmail_email_configured and not resend_configured:
         return Response(
             {
                 "success": False,

@@ -9,6 +9,10 @@ from django.conf import settings
 
 
 def send_verification_email(*, recipient, subject, message):
+    if settings.BREVO_API_KEY and settings.BREVO_SENDER_EMAIL:
+        _send_with_brevo(recipient, subject, message)
+        return
+
     if all(
         (
             settings.GMAIL_EMAIL,
@@ -25,6 +29,50 @@ def send_verification_email(*, recipient, subject, message):
         return
 
     raise RuntimeError("Email delivery credentials are missing.")
+
+
+def _send_with_brevo(recipient, subject, message):
+    payload = json.dumps(
+        {
+            "sender": {
+                "name": settings.BREVO_SENDER_NAME or settings.BREVO_SENDER_EMAIL,
+                "email": settings.BREVO_SENDER_EMAIL,
+            },
+            "to": [{"email": recipient}],
+            "subject": subject,
+            "textContent": message,
+        }
+    ).encode("utf-8")
+    request = Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=payload,
+        headers={
+            "api-key": settings.BREVO_API_KEY,
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=settings.EMAIL_TIMEOUT) as response:
+            if response.status >= 400:
+                raise RuntimeError(
+                    f"Brevo rejected the email with status {response.status}."
+                )
+    except HTTPError as error:
+        error_body = error.read().decode("utf-8", errors="replace")
+        try:
+            error_data = json.loads(error_body)
+        except json.JSONDecodeError:
+            error_data = {}
+        detail = error_data.get("message") or error_data.get("code")
+        raise RuntimeError(
+            f"Brevo rejected the email with status {error.code}: "
+            f"{detail or 'No error details returned.'}"
+        ) from error
+    except (TimeoutError, URLError, OSError) as error:
+        raise RuntimeError("Could not reach Brevo email API.") from error
 
 
 def _send_with_gmail_api(recipient, subject, message):
