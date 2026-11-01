@@ -1,3 +1,10 @@
+# Repository layout
+
+- `frontend/`: Flutter app (UI, calendar, authentication).
+- `backend/`: Django API and email delivery.
+
+Run Flutter commands from `frontend/`. See `frontend/README.md` and `backend/README.md`.
+
 # МТС — Оюутны мэдээллийн систем
 
 Мандах Их Сургуулийн Мэдээлэл, технологийн сургуулийн оюутнуудад зориулсан Flutter аппын эхний 3 хуудасны прототип. Нил ягаан градиент, өнгөлөг карт, тоглоомын хэв маягтай сургалтын загвартай. Login хуудас ороогүй.

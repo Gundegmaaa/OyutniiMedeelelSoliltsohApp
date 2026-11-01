@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:mtc_student_hub/auth/auth_api.dart';
 import 'package:mtc_student_hub/main.dart';
 import 'package:mtc_student_hub/models/learning.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,7 +20,25 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const StudentHubApp());
+    final api = AuthApi(
+      client: MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'user': {
+              'id': 'demo-student',
+              'email': 'student@example.com',
+              'display_name': 'Гүндэгмаа',
+              'role': 'student',
+              'email_verified': true,
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ),
+    );
+    addTearDown(api.close);
+    await tester.pumpWidget(StudentHubApp(authApi: api));
     await tester.pumpAndSettle();
   }
 

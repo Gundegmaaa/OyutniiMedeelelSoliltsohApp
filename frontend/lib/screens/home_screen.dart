@@ -7,8 +7,14 @@ import '../widgets/calendar_events.dart';
 import '../widgets/ui.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.today, this.eventStore});
+  const HomeScreen({
+    super.key,
+    this.today,
+    this.eventStore,
+    this.displayName = 'Гүндэгмаа',
+  });
 
+  final String displayName;
   final DateTime? today;
   final CalendarEventStore? eventStore;
 
@@ -238,8 +244,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const SizedBox(height: 14),
-        const Text(
-          'Сайн байна уу, Гүндэгмаа 👋',
+        Text(
+          'Сайн байна уу, ${widget.displayName} 👋',
           style: TextStyle(
             fontSize: 25,
             height: 1.28,

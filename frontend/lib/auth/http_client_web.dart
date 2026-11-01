@@ -1,0 +1,5 @@
+import 'package:http/browser_client.dart';
+import 'package:http/http.dart' as http;
+
+// The browser owns session cookies, including the HttpOnly sessionid cookie.
+http.Client createAuthHttpClient() => BrowserClient()..withCredentials = true;
