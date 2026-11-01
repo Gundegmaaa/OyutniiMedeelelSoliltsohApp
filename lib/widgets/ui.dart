@@ -14,7 +14,14 @@ class SurfaceCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surface,
       border: Border.all(color: Theme.of(context).dividerColor),
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(26),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.purple.withValues(alpha: .035),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+        ),
+      ],
     ),
     child: child,
   );
@@ -27,7 +34,11 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+    style: const TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -.5,
+    ),
   );
 }
 
@@ -41,9 +52,11 @@ class PillButton extends StatelessWidget {
     onPressed: onPressed,
     style: FilledButton.styleFrom(
       backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF253858)
+          ? const Color(0xFF403052)
           : AppColors.paleBlue,
-      foregroundColor: AppColors.blue,
+      foregroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFFD2B8FF)
+          : AppColors.purple,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
     ),
@@ -76,7 +89,7 @@ class SegmentTabs extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: selected == index
                     ? AppColors.blue
-                    : Theme.of(context).dividerColor,
+                    : Theme.of(context).colorScheme.surface,
                 foregroundColor: selected == index
                     ? Colors.white
                     : Theme.of(context).textTheme.bodyLarge?.color,

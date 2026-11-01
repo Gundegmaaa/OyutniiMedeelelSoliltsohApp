@@ -1,10 +1,30 @@
+import 'dart:typed_data';
+
 enum PostCategory {
-  sale('Зар'),
+  sale('Худалдах зар'),
+  exchange('Солилцох зар'),
+  rental('Түрээслүүлэх зар'),
   question('Асуулт'),
   teacher('Багш');
 
   const PostCategory(this.label);
   final String label;
+}
+
+enum PostAvatar {
+  books('Ном', '📚', assetPath: 'assets/icons/books.png'),
+  laptop('Компьютер', '💻'),
+  bag('Цүнх', '🎒'),
+  home('Байр', '🏠'),
+  bicycle('Унаа', '🚲'),
+  person('Аватар', '🧑‍🎓'),
+  chat('Асуулт', '💬'),
+  gift('Бусад', '🎁');
+
+  const PostAvatar(this.label, this.symbol, {this.assetPath});
+  final String label;
+  final String symbol;
+  final String? assetPath;
 }
 
 class Post {
@@ -14,7 +34,10 @@ class Post {
     required this.title,
     required this.body,
     required this.category,
+    this.avatar = PostAvatar.books,
     this.price,
+    this.imageBytes,
+    this.imageName,
     this.likes = 0,
     List<String>? comments,
     this.time = 'Дөнгөж сая',
@@ -24,7 +47,10 @@ class Post {
   final String title;
   final String body;
   final PostCategory category;
+  final PostAvatar avatar;
   final String? price;
+  final Uint8List? imageBytes;
+  final String? imageName;
   final String time;
   int likes;
   bool liked = false;
@@ -53,6 +79,7 @@ List<Post> demoPosts() => [
     title: 'Намрын улирлын шалгалтын\nхуваарь шинэчлэгдлээ.',
     body: 'Шалгалтын дэлгэрэнгүй хуваарийг сургалтын албанаас авна уу.',
     category: PostCategory.teacher,
+    avatar: PostAvatar.person,
     likes: 15,
     time: '2 цагийн өмнө',
     comments: [
@@ -68,6 +95,7 @@ List<Post> demoPosts() => [
     body:
         'Дээд курсын оюутнуудаас inheritance, polymorphism-ийн талаар асуух гэсэн юм. Яаж давтвал үр дүнтэй вэ?',
     category: PostCategory.question,
+    avatar: PostAvatar.chat,
     likes: 3,
     time: '3 цагийн өмнө',
     comments: ['Болд: Жижиг жишээ код бичиж үзээрэй.'],

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mtc_student_hub/main.dart';
 import 'package:mtc_student_hub/models/learning.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   Future<void> openApp(
     WidgetTester tester, {
     Size size = const Size(430, 932),
@@ -37,7 +40,9 @@ void main() {
     await openApp(tester);
     await tester.tap(find.text('Community').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Асуулт').first);
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Асуулт'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Асуулт'));
     await tester.pumpAndSettle();
     expect(find.text('💬 OOP хичээлийн зөвлөгөө хэрэгтэй'), findsOneWidget);
     expect(find.text('📚 Ном зарна'), findsNothing);
@@ -57,6 +62,8 @@ void main() {
       find.byType(TextFormField).at(1),
       'StatefulWidget хэрхэн ашиглах вэ?',
     );
+    await tester.ensureVisible(find.text('Нийтлэх'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Нийтлэх'));
     await tester.pumpAndSettle();
     expect(find.text('Flutter зөвлөгөө'), findsOneWidget);
@@ -71,13 +78,15 @@ void main() {
     await openApp(tester);
     await tester.tap(find.text('Community').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Таалагдлаа').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Таалагдлаа').first);
     await tester.pumpAndSettle();
     expect(find.text('9'), findsOneWidget);
     await tester.tap(find.byTooltip('Таалагдсаныг болих').first);
     await tester.pumpAndSettle();
     expect(find.text('8'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, '4').first);
+    await tester.tap(find.byIcon(Icons.chat_bubble_outline).first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Ном байгаа юу?');
     await tester.tap(find.byTooltip('Илгээх'));
