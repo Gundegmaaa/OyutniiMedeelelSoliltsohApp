@@ -1,0 +1,18 @@
+# Flutter artifacts left at the repository root after moving to frontend/.
+/.dart_tool/
+/.flutter-plugins
+/.flutter-plugins-dependencies
+/.packages
+/build/
+/coverage/
+/android/local.properties
+/android/.gradle/
+/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Flutter/ephemeral/
+/ios/Runner/GeneratedPluginRegistrant.h
+/ios/Runner/GeneratedPluginRegistrant.m
+
+# Local test output.
+/frontend/merge-test-results.txt
