@@ -13,8 +13,11 @@ import 'theme.dart';
 void main() => runApp(const StudentHubApp());
 
 class StudentHubApp extends StatefulWidget {
-  const StudentHubApp({super.key, this.authApi});
+  const StudentHubApp({super.key, this.authApi, this.postApi});
   final AuthApi? authApi;
+
+  /// Lets a widget test replace the community backend.
+  final PostApi? postApi;
   @override
   State<StudentHubApp> createState() => _StudentHubAppState();
 }
@@ -128,6 +131,7 @@ class _StudentHubAppState extends State<StudentHubApp> {
         StudentHub(
           key: ValueKey(user.id),
           user: user,
+          postApi: widget.postApi,
           onLogout: _logout,
           dark: dark,
           toggleTheme: () => setState(() => dark = !dark),
@@ -162,7 +166,9 @@ class StudentHub extends StatefulWidget {
     required this.toggleTheme,
     required this.user,
     required this.onLogout,
+    this.postApi,
   });
+  final PostApi? postApi;
   final AuthUser user;
   final Future<void> Function() onLogout;
   final bool dark;
@@ -177,12 +183,12 @@ class _StudentHubState extends State<StudentHub> {
   @override
   void initState() {
     super.initState();
-    _postApi = PostApi();
+    _postApi = widget.postApi ?? PostApi();
   }
 
   @override
   void dispose() {
-    _postApi.close();
+    if (widget.postApi == null) _postApi.close();
     super.dispose();
   }
 
@@ -442,7 +448,14 @@ class _StudentHubState extends State<StudentHub> {
                     ? widget.user.displayName
                     : widget.user.firstName,
               ),
-              CommunityScreen(key: communityKey, postApi: _postApi),
+              CommunityScreen(
+                key: communityKey,
+                postApi: _postApi,
+                userName: widget.user.firstName.isEmpty
+                    ? widget.user.displayName
+                    : widget.user.firstName,
+                userCourse: widget.user.course,
+              ),
               LearningScreen(
                 progress: progress,
                 onProgress: () => setState(() {}),

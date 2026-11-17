@@ -16,13 +16,18 @@ class PostApiException implements Exception {
   String toString() => message;
 }
 
+typedef LikeState = ({bool liked, int count});
+
 class PostApi {
   PostApi({String? baseUrl, http.Client? client})
-    : _baseUrl = (baseUrl ??
-          const String.fromEnvironment(
-            'API_BASE_URL',
-            defaultValue: 'https://oyutniimedeelelsoliltsohapp-1.onrender.com',
-          )).replaceAll(RegExp(r'/+$'), ''),
+    : _baseUrl =
+          (baseUrl ??
+                  const String.fromEnvironment(
+                    'API_BASE_URL',
+                    defaultValue:
+                        'https://oyutniimedeelelsoliltsohapp-1.onrender.com',
+                  ))
+              .replaceAll(RegExp(r'/+$'), ''),
       _client = client ?? createAuthHttpClient();
 
   final String _baseUrl;
@@ -32,36 +37,33 @@ class PostApi {
   Uri get _uri => Uri.parse('$_baseUrl/api/v1/posts/');
 
   Future<List<Post>> listPosts() async {
+    final response = await _send(
+      () => _client.get(_uri, headers: const {'Accept': 'application/json'}),
+    );
+    if (response.statusCode != 200) {
+      throw PostApiException(
+        'Заруудыг татаж чадсангүй (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
     try {
-      final response = await _client.get(
-        _uri,
-        headers: const {'Accept': 'application/json'},
-      ).timeout(_timeout);
-      if (response.statusCode != 200) {
-        throw PostApiException(
-          'Заруудыг татаж чадсангүй (${response.statusCode}).',
-          statusCode: response.statusCode,
-        );
-      }
       final items = jsonDecode(response.body) as List<dynamic>;
       return items
           .map((item) => _postFromJson(item as Map<String, dynamic>))
           .toList();
-    } on TimeoutException {
-      throw const PostApiException('Серверээс хариу ирсэнгүй.');
-    } on http.ClientException {
-      throw const PostApiException('Backend сервертэй холбогдож чадсангүй.');
     } on FormatException {
       throw const PostApiException('Backend буруу хариу буцаалаа.');
     }
   }
 
-  Future<void> createPost(Post post) async {
+  /// Saves the post and returns its server id.
+  Future<int?> createPost(Post post) async {
     final request = http.MultipartRequest('POST', _uri)
       ..headers['Accept'] = 'application/json'
       ..fields['title'] = post.title
       ..fields['content'] = post.body
-      ..fields['post_type'] = _postType(post.category);
+      ..fields['post_type'] = _postType(post.category)
+      ..fields['audience_courses'] = post.audienceCourses.join(',');
 
     final numericPrice = post.price?.replaceAll(RegExp(r'[^0-9.]'), '');
     if (numericPrice != null && numericPrice.isNotEmpty) {
@@ -77,17 +79,79 @@ class PostApi {
       );
     }
 
+    final response = await _send(
+      () async => http.Response.fromStream(await _client.send(request)),
+      timeoutMessage: 'Хүсэлт удаж байна. Дахин оролдоно уу.',
+    );
+    if (response.statusCode != 201) {
+      throw PostApiException(
+        _errorMessage(response, 'Зар нэмэхэд алдаа гарлаа'),
+        statusCode: response.statusCode,
+      );
+    }
     try {
-      final streamed = await _client.send(request).timeout(_timeout);
-      final response = await http.Response.fromStream(streamed);
-      if (response.statusCode != 201) {
-        throw PostApiException(
-          _errorMessage(response),
-          statusCode: response.statusCode,
-        );
-      }
+      final body = jsonDecode(response.body);
+      final data = body is Map ? body['data'] : null;
+      return data is Map ? data['id'] as int? : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Adds or removes the signed-in student's reaction.
+  Future<LikeState> toggleLike(int postId) async {
+    final response = await _send(
+      () => _client.post(
+        Uri.parse('$_baseUrl/api/v1/posts/$postId/like/'),
+        headers: const {'Accept': 'application/json'},
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw PostApiException(
+        _errorMessage(response, 'Таалагдсаныг хадгалж чадсангүй'),
+        statusCode: response.statusCode,
+      );
+    }
+    try {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (liked: body['liked'] as bool, count: body['like_count'] as int);
+    } on FormatException {
+      throw const PostApiException('Backend буруу хариу буцаалаа.');
+    }
+  }
+
+  /// Names of the students who reacted, newest first.
+  Future<List<String>> listLikers(int postId) async {
+    final response = await _send(
+      () => _client.get(
+        Uri.parse('$_baseUrl/api/v1/posts/$postId/likes/'),
+        headers: const {'Accept': 'application/json'},
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw PostApiException(
+        _errorMessage(response, 'Жагсаалтыг татаж чадсангүй'),
+        statusCode: response.statusCode,
+      );
+    }
+    try {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (body['people'] as List<dynamic>)
+          .map((person) => _personLabel(person as Map<String, dynamic>))
+          .toList();
+    } on FormatException {
+      throw const PostApiException('Backend буруу хариу буцаалаа.');
+    }
+  }
+
+  Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    String timeoutMessage = 'Серверээс хариу ирсэнгүй.',
+  }) async {
+    try {
+      return await request().timeout(_timeout);
     } on TimeoutException {
-      throw const PostApiException('Хүсэлт удаж байна. Дахин оролдоно уу.');
+      throw PostApiException(timeoutMessage);
     } on http.ClientException {
       throw const PostApiException('Backend сервертэй холбогдож чадсангүй.');
     }
@@ -101,6 +165,12 @@ class PostApi {
     PostCategory.teacher => 'teacher',
   };
 
+  String _personLabel(Map<String, dynamic> person) {
+    final name = person['name'] as String? ?? 'Оюутан';
+    final course = person['course'];
+    return course == null ? name : '$name • $course-р курс';
+  }
+
   Post _postFromJson(Map<String, dynamic> json) {
     final category = switch (json['post_type']) {
       'sell' => PostCategory.sale,
@@ -110,34 +180,52 @@ class PostApi {
       'teacher' => PostCategory.teacher,
       _ => PostCategory.teacher,
     };
-    final price = json['price']?.toString();
+    final price = num.tryParse(json['price']?.toString() ?? '');
+    final author = json['author'];
+    final image = json['image'] as String?;
     return Post(
-      author: 'Оюутан',
+      id: json['id'] as int?,
+      author: author is Map<String, dynamic> ? _personLabel(author) : 'Оюутан',
       subtitle: '',
       title: json['title'] as String? ?? '',
       body: json['content'] as String? ?? '',
       category: category,
-      price: price == null ? null : '$price₮',
+      avatar: switch (category) {
+        PostCategory.question => PostAvatar.chat,
+        PostCategory.teacher => PostAvatar.person,
+        _ => PostAvatar.gift,
+      },
+      price: price == null ? null : formatMoney(price),
+      imageUrl: image == null || image.isEmpty ? null : image,
+      likes: json['like_count'] as int? ?? 0,
+      liked: json['liked'] as bool? ?? false,
+      isMine: json['is_mine'] as bool? ?? false,
+      audienceCourses: (json['audience_courses'] as List<dynamic>? ?? const [])
+          .whereType<int>()
+          .toList(),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
       time: 'Шинэ',
     );
   }
 
-  String _errorMessage(http.Response response) {
+  String _errorMessage(http.Response response, String fallback) {
     try {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['message'];
-      if (message is String && message.isNotEmpty) return message;
-      final errors = body['errors'];
-      if (errors is Map && errors.isNotEmpty) {
-        final first = errors.values.first;
-        return first is List && first.isNotEmpty
-            ? first.first.toString()
-            : first.toString();
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) {
+        final message = body['message'];
+        final errors = body['errors'];
+        if (errors is Map && errors.isNotEmpty) {
+          final first = errors.values.first;
+          return first is List && first.isNotEmpty
+              ? first.first.toString()
+              : first.toString();
+        }
+        if (message is String && message.isNotEmpty) return message;
       }
     } on FormatException {
       // Use the status-based message below for non-JSON error responses.
     }
-    return 'Зар нэмэхэд алдаа гарлаа (${response.statusCode}).';
+    return '$fallback (${response.statusCode}).';
   }
 
   void close() => _client.close();

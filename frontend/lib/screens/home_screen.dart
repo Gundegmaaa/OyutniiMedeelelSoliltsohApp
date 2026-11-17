@@ -31,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _eventsLoading = true;
   bool _eventsSaving = false;
   bool _eventsLoadFailed = false;
+  CalendarEventType? _filterType;
 
   static const _weekdays = [
     'Даваа',
@@ -89,6 +90,21 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CalendarEvent> _eventsOn(DateTime date) =>
       _events.where((event) => _sameDate(event.date, date)).toList();
 
+  /// All events of [type]: upcoming ones by date first, then past ones with
+  /// the most recent first.
+  List<CalendarEvent> _eventsOfType(CalendarEventType type) {
+    final matching = _events.where((event) => event.type == type);
+    final upcoming =
+        matching.where((event) => !event.date.isBefore(_today)).toList()
+          ..sort(_compareEvents);
+    final past = matching.where((event) => event.date.isBefore(_today)).toList()
+      ..sort((a, b) => _compareEvents(b, a));
+    return [...upcoming, ...past];
+  }
+
+  void _toggleFilter(CalendarEventType type) =>
+      setState(() => _filterType = _filterType == type ? null : type);
+
   Future<bool> _saveEvents(
     List<CalendarEvent> updated, {
     DateTime? focusDate,
@@ -116,9 +132,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _editEvent([CalendarEvent? event]) async {
     if (_eventsLoading || _eventsLoadFailed || _eventsSaving) return;
+    if (event == null && _selectedDate.isBefore(_today)) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Өнгөрсөн өдөрт тэмдэглэл нэмэх боломжгүй.'),
+          ),
+        );
+      return;
+    }
     final saved = await showCalendarEventEditor(
       context,
       date: _selectedDate,
+      today: _today,
       event: event,
       onSave: (draft) => _saveEvents([
         ..._events.where((item) => item.id != draft.id),
@@ -323,6 +350,32 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonalIcon(
+            key: const ValueKey('open-week-schedule'),
+            onPressed: _showWeekSchedule,
+            style: FilledButton.styleFrom(
+              backgroundColor: dark
+                  ? const Color(0xFF403052)
+                  : AppColors.paleBlue,
+              foregroundColor: dark
+                  ? const Color(0xFFD2B8FF)
+                  : AppColors.purple,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+            icon: const Icon(Icons.view_week_rounded, size: 19),
+            label: const Text('Долоо хоногийн хуваарь харах'),
+          ),
         ),
         const SizedBox(height: 16),
         if (selectedLessons.isEmpty) _emptySchedule(dark),
@@ -562,7 +615,10 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   Widget _importantDates(bool dark) {
-    final events = _eventsOn(_selectedDate);
+    final filter = _filterType;
+    final events = filter == null
+        ? _eventsOn(_selectedDate)
+        : _eventsOfType(filter);
     return Column(
       key: const ValueKey('important-dates'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -581,7 +637,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         Text(
-          '${_selectedDate.year}.${_selectedDate.month.toString().padLeft(2, '0')}.${_selectedDate.day.toString().padLeft(2, '0')} • ${events.length} тэмдэглэл',
+          filter == null
+              ? '${_selectedDate.year}.${_selectedDate.month.toString().padLeft(2, '0')}.${_selectedDate.day.toString().padLeft(2, '0')} • ${events.length} тэмдэглэл'
+              : '${filter.label} • ${events.length} тэмдэглэл',
+          key: const ValueKey('important-dates-subtitle'),
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -622,8 +681,12 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  Icons.event_note_rounded,
-                  color: Theme.of(context).colorScheme.primary,
+                  filter == null
+                      ? Icons.event_note_rounded
+                      : calendarEventIcon(filter),
+                  color: filter == null
+                      ? Theme.of(context).colorScheme.primary
+                      : calendarEventColor(filter, dark: dark),
                   size: 28,
                 ),
                 const SizedBox(width: 12),
@@ -631,13 +694,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Энэ өдөр тэмдэглэлгүй',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                      Text(
+                        filter == null
+                            ? 'Энэ өдөр тэмдэглэлгүй'
+                            : 'Энэ төрлийн тэмдэглэл алга.',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Шалгалт, бие даалт, семинараа мартахгүйн тулд нэмээрэй.',
+                        filter == null
+                            ? 'Шалгалт, бие даалт, семинараа мартахгүйн тулд нэмээрэй.'
+                            : 'Төрлийг дахин дарж бүх өдрийн тэмдэглэл рүү буцна.',
                         style: TextStyle(
                           fontSize: 12,
                           height: 1.5,
@@ -653,6 +720,7 @@ class _HomeScreenState extends State<HomeScreen> {
         for (final event in events) ...[
           CalendarEventCard(
             event: event,
+            showDate: filter != null,
             onEdit: () => _editEvent(event),
             onDelete: () => _deleteEvent(event),
           ),
@@ -759,7 +827,11 @@ class _HomeScreenState extends State<HomeScreen> {
               final isToday = _sameDate(date, _today);
               final inMonth = date.month == _visibleMonth.month;
               final hasLessons = date.weekday <= DateTime.friday;
-              final events = _eventsOn(date);
+              final events = _eventsOn(date)
+                  .where(
+                    (event) => _filterType == null || event.type == _filterType,
+                  )
+                  .toList();
               final eventTypes = events.map((event) => event.type).toSet();
               final labelColor = isSelected
                   ? Colors.white
@@ -882,39 +954,216 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 13),
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 12,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final type in CalendarEventType.values)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      calendarEventIcon(type),
-                      size: 12,
-                      color: calendarEventColor(type, dark: dark),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      type.label,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                _filterChip(type, dark),
             ],
           ),
           const SizedBox(height: 10),
           Text(
-            'Өдрөө сонгоод чухал тэмдэглэлээ нэмээрэй',
+            'Өдрөө сонгоод тэмдэглэлээ нэмээрэй. Төрөл дээр дарвал тухайн төрлийн бүх тэмдэглэл харагдана.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 10,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(CalendarEventType type, bool dark) {
+    final selected = _filterType == type;
+    final color = calendarEventColor(type, dark: dark);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${type.label} төрлөөр шүүх',
+      excludeSemantics: true,
+      child: Material(
+        key: ValueKey('event-filter-${type.name}'),
+        color: selected
+            ? color.withValues(alpha: dark ? .22 : .12)
+            : Colors.transparent,
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: selected ? color : Theme.of(context).dividerColor,
+          ),
+        ),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: () => _toggleFilter(type),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 34),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(calendarEventIcon(type), size: 14, color: color),
+                  const SizedBox(width: 4),
+                  Text(
+                    type.label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? color
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (selected) ...[
+                    const SizedBox(width: 3),
+                    Icon(Icons.close_rounded, size: 13, color: color),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showWeekSchedule() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    constraints: const BoxConstraints(maxWidth: 600),
+    builder: (context) {
+      final theme = Theme.of(context);
+      final dark = theme.brightness == Brightness.dark;
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .85,
+        ),
+        child: ListView(
+          key: const ValueKey('week-schedule-sheet'),
+          shrinkWrap: true,
+          padding: EdgeInsets.fromLTRB(
+            20,
+            0,
+            20,
+            24 + MediaQuery.paddingOf(context).bottom,
+          ),
+          children: [
+            const SectionTitle('Хичээлийн хуваарь'),
+            const SizedBox(height: 4),
+            Text(
+              'Долоо хоног бүр давтагдана',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            for (var day = 0; day < _weekdays.length; day++) ...[
+              _weekScheduleDay(context, day, dark),
+              const SizedBox(height: 10),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+
+  Widget _weekScheduleDay(BuildContext context, int day, bool dark) {
+    final theme = Theme.of(context);
+    final isToday = _today.weekday - 1 == day;
+    final lessons = _lessons[day];
+    return Container(
+      key: ValueKey('week-day-$day'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: isToday
+            ? (dark ? const Color(0xFF38264F) : const Color(0xFFF0E9FF))
+            : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isToday
+              ? AppColors.purple.withValues(alpha: dark ? .7 : .45)
+              : theme.dividerColor,
+          width: isToday ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _weekdays[day],
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: isToday ? theme.colorScheme.primary : null,
+                  ),
+                ),
+              ),
+              if (isToday)
+                Container(
+                  key: const ValueKey('week-day-today'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'Өнөөдөр',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (lessons.isEmpty)
+            Text(
+              'Хичээлгүй',
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          for (final lesson in lessons)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: lesson.$1,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' • ${lesson.$2}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(
+                      text: ' • ${lesson.$3} тоот',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                style: const TextStyle(fontSize: 13, height: 1.4),
+              ),
+            ),
         ],
       ),
     );

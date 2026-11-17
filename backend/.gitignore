@@ -8,3 +8,4 @@ db.sqlite3-*
 htmlcov/
 staticfiles/
 .pytest_cache/
+media/

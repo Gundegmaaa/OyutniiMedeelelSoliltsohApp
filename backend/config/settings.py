@@ -97,7 +97,8 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("POSTGRES_DB", "neondb"),
         "USER": os.getenv("POSTGRES_USER", "neondb_owner"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "npg_tmlBV8sjgY5a"),
+        # Never hard-code the password; set POSTGRES_PASSWORD in the environment.
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
         "HOST": os.getenv(
             "POSTGRES_HOST",
             "ep-late-water-b5ii7prk.c-7.us-east-2.aws.neon.tech",
@@ -173,15 +174,20 @@ USE_TZ = True
 # Static files
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOWED_ORIGINS = [
-    "https://oyutnii-medeelel-frontend.onrender.com",
-]
+# The deployed frontend is always allowed; local origins come from .env.
+_FRONTEND_ORIGIN = "https://oyutnii-medeelel-frontend.onrender.com"
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://oyutnii-medeelel-frontend.onrender.com",
-]
+CORS_ALLOWED_ORIGINS = sorted(
+    {_FRONTEND_ORIGIN, *env_list("CORS_ALLOWED_ORIGINS")}
+)
+
+CSRF_TRUSTED_ORIGINS = sorted(
+    {_FRONTEND_ORIGIN, *env_list("CSRF_TRUSTED_ORIGINS")}
+)
 
 CORS_ALLOW_CREDENTIALS = True
 

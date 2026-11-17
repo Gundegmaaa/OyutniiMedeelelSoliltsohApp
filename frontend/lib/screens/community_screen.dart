@@ -10,11 +10,21 @@ import '../theme.dart';
 import '../widgets/ui.dart';
 
 class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key, this.pickPostImage, this.postApi});
+  const CommunityScreen({
+    super.key,
+    this.pickPostImage,
+    this.postApi,
+    this.userName = 'Гүндэгмаа',
+    this.userCourse = 2,
+  });
 
   /// Allows a host or a widget test to provide its own gallery picker.
   final Future<XFile?> Function()? pickPostImage;
   final PostApi? postApi;
+
+  /// The signed-in student, used as the author of new posts and comments.
+  final String userName;
+  final int? userCourse;
 
   @override
   State<CommunityScreen> createState() => CommunityScreenState();
@@ -23,6 +33,10 @@ class CommunityScreen extends StatefulWidget {
 class CommunityScreenState extends State<CommunityScreen> {
   final posts = demoPosts();
   int filter = 0;
+
+  String get _userLabel => widget.userCourse == null
+      ? widget.userName
+      : '${widget.userName} • ${widget.userCourse}-р курс';
 
   @override
   void initState() {
@@ -43,27 +57,31 @@ class CommunityScreenState extends State<CommunityScreen> {
     }
   }
 
+  void _showMessage(String message) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
+
   Future<void> createPost() async {
     final result = await showModalBottomSheet<Post>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (context) => _PostComposer(pickImage: widget.pickPostImage),
+      builder: (context) => _PostComposer(
+        pickImage: widget.pickPostImage,
+        author: _userLabel,
+        userCourse: widget.userCourse,
+      ),
     );
     if (result != null && mounted) {
       final api = widget.postApi;
       if (api != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Зарыг серверт хадгалж байна…')),
-        );
+        _showMessage('Зарыг серверт хадгалж байна…');
         try {
-          await api.createPost(result);
+          result.id = await api.createPost(result);
         } on PostApiException catch (error) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(error.message)));
+          _showMessage(error.message);
           return;
         }
       }
@@ -72,12 +90,49 @@ class CommunityScreenState extends State<CommunityScreen> {
         posts.insert(0, result);
         filter = 0;
       });
-      ScaffoldMessenger.of(
-        context,
-      )..hideCurrentSnackBar()
-       ..showSnackBar(const SnackBar(content: Text('Нийтлэл амжилттай нэмэгдлээ')));
+      _showMessage('Нийтлэл амжилттай нэмэгдлээ');
     }
   }
+
+  Future<void> toggleLike(Post post) async {
+    final api = widget.postApi;
+    final id = post.id;
+    if (api != null && id != null) {
+      try {
+        final state = await api.toggleLike(id);
+        if (!mounted) return;
+        setState(() {
+          post.liked = state.liked;
+          post.likes = state.count;
+        });
+      } on PostApiException catch (error) {
+        if (mounted) _showMessage(error.message);
+      }
+      return;
+    }
+    setState(() {
+      post.liked = !post.liked;
+      post.likes += post.liked ? 1 : -1;
+      if (post.liked) {
+        post.likers.insert(0, _userLabel);
+      } else {
+        post.likers.remove(_userLabel);
+      }
+    });
+  }
+
+  Future<void> showLikers(Post post) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (context) => _LikersSheet(
+      post: post,
+      load: widget.postApi != null && post.id != null
+          ? () => widget.postApi!.listLikers(post.id!)
+          : null,
+    ),
+  );
 
   Future<void> showComments(Post post) async {
     await showModalBottomSheet<void>(
@@ -85,16 +140,42 @@ class CommunityScreenState extends State<CommunityScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (context) => _CommentsSheet(post: post),
+      builder: (context) =>
+          _CommentsSheet(post: post, userName: widget.userName),
     );
     if (mounted) setState(() {});
   }
 
+  Future<void> showDetails(Post post) => showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) => StatefulBuilder(
+      builder: (context, refresh) => _PostDetails(
+        post: post,
+        onLike: () async {
+          await toggleLike(post);
+          refresh(() {});
+        },
+        onLikers: () => showLikers(post),
+        onComments: () async {
+          await showComments(post);
+          refresh(() {});
+        },
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    final visible = posts.where(
-      (p) => filter == 0 || p.category == PostCategory.values[filter - 1],
-    );
+    final visible = posts
+        .where(
+          (p) =>
+              (filter == 0 || p.category == PostCategory.values[filter - 1]) &&
+              p.visibleTo(widget.userCourse),
+        )
+        .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
       children: [
@@ -142,25 +223,38 @@ class CommunityScreenState extends State<CommunityScreen> {
         LayoutBuilder(
           builder: (context, constraints) {
             final columns =
-                constraints.maxWidth >= 340 &&
+                constraints.maxWidth >= 320 &&
                     MediaQuery.textScalerOf(context).scale(1) <= 1.3
                 ? 2
                 : 1;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 14,
+            // Every card has the same slots, so each row is laid out with
+            // equal heights and all rows end up the same size.
+            return Column(
               children: [
-                for (final post in visible)
-                  SizedBox(
-                    width: width,
-                    child: _PostCard(
-                      post: post,
-                      onLike: () => setState(() {
-                        post.liked = !post.liked;
-                        post.likes += post.liked ? 1 : -1;
-                      }),
-                      onComments: () => showComments(post),
+                for (var start = 0; start < visible.length; start += columns)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var i = start; i < start + columns; i++) ...[
+                            if (i > start) const SizedBox(width: 12),
+                            Expanded(
+                              child: i < visible.length
+                                  ? _PostCard(
+                                      post: visible[i],
+                                      onLike: () => toggleLike(visible[i]),
+                                      onLikers: () => showLikers(visible[i]),
+                                      onComments: () =>
+                                          showComments(visible[i]),
+                                      onDetails: () => showDetails(visible[i]),
+                                    )
+                                  : const SizedBox(),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -245,218 +339,486 @@ class _CommunityBanner extends StatelessWidget {
   );
 }
 
+Color _categoryAccent(BuildContext context, PostCategory category) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  return switch (category) {
+    PostCategory.sale => dark ? AppColors.lavender : AppColors.purple,
+    PostCategory.exchange => dark ? AppColors.mint : const Color(0xFF277F74),
+    PostCategory.rental =>
+      dark ? const Color(0xFFFFBA80) : const Color(0xFFA95310),
+    PostCategory.question =>
+      dark ? const Color(0xFFF299C4) : const Color(0xFFBE4B89),
+    PostCategory.teacher => dark ? AppColors.mint : const Color(0xFF277F74),
+  };
+}
+
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.category});
+  final PostCategory category;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _categoryAccent(context, category);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Text(
+        category.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: accent,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+/// The post's own photo, or its avatar tile when it has none.
+class _PostVisual extends StatelessWidget {
+  const _PostVisual({required this.post, required this.height});
+  final Post post;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _categoryAccent(context, post.category);
+    final avatar = Container(
+      key: const ValueKey('post-avatar'),
+      height: height,
+      width: double.infinity,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: .08),
+            accent.withValues(alpha: .23),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Semantics(
+        label: post.avatar.label,
+        child: post.avatar.assetPath != null
+            ? Image.asset(
+                post.avatar.assetPath!,
+                width: height * .55,
+                height: height * .55,
+                fit: BoxFit.contain,
+              )
+            : Text(
+                post.avatar.symbol,
+                style: TextStyle(fontSize: height * .42),
+              ),
+      ),
+    );
+    if (!post.hasImage) return avatar;
+    return Semantics(
+      button: true,
+      label: '${post.title} зургийг томруулах',
+      child: InkWell(
+        key: const ValueKey('open-post-image'),
+        onTap: () => _showPostImage(context, post),
+        borderRadius: BorderRadius.circular(18),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: post.imageBytes != null
+              ? Image.memory(
+                  post.imageBytes!,
+                  key: const ValueKey('post-image'),
+                  width: double.infinity,
+                  height: height,
+                  fit: BoxFit.cover,
+                  semanticLabel: post.title,
+                  errorBuilder: (_, error, stackTrace) => SizedBox(
+                    height: height,
+                    child: const Center(
+                      child: Text('Зураг харуулах боломжгүй байна'),
+                    ),
+                  ),
+                )
+              : Image.network(
+                  post.imageUrl!,
+                  width: double.infinity,
+                  height: height,
+                  fit: BoxFit.cover,
+                  semanticLabel: post.title,
+                  errorBuilder: (_, error, stackTrace) => avatar,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PostCard extends StatelessWidget {
   const _PostCard({
     required this.post,
     required this.onLike,
+    required this.onLikers,
     required this.onComments,
+    required this.onDetails,
   });
   final Post post;
   final VoidCallback onLike;
+  final VoidCallback onLikers;
   final VoidCallback onComments;
+  final VoidCallback onDetails;
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = switch (post.category) {
-      PostCategory.sale => dark ? AppColors.lavender : AppColors.purple,
-      PostCategory.exchange => const Color(0xFF277F74),
-      PostCategory.rental => const Color(0xFFB86B23),
-      PostCategory.question =>
-        dark ? const Color(0xFFF299C4) : const Color(0xFFBE4B89),
-      PostCategory.teacher => const Color(0xFF277F74),
-    };
+    final accent = _categoryAccent(context, post.category);
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final scale = MediaQuery.textScalerOf(context).scale;
     return SurfaceCard(
       padding: 12,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(30),
-            ),
+          Row(
+            children: [
+              Flexible(child: _CategoryChip(category: post.category)),
+              if (post.audienceCourses.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Зөвхөн ${audienceLabel(post.audienceCourses)}',
+                  child: Icon(Icons.group_rounded, size: 16, color: muted),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Stack(
+            children: [
+              _PostVisual(post: post, height: 112),
+              if (post.price != null)
+                Positioned(
+                  left: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      post.price!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Fixed two-line slots keep every card the same height.
+          SizedBox(
+            height: scale(15 * 1.35 * 2),
             child: Text(
-              post.category.label,
-              style: TextStyle(
-                color: accent,
-                fontSize: 10,
+              post.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.35,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          if (post.imageBytes != null) ...[
-            Semantics(
-              button: true,
-              label: '${post.title} зургийг томруулах',
-              child: InkWell(
-                key: const ValueKey('open-post-image'),
-                onTap: () => _showPostImage(context, post),
-                borderRadius: BorderRadius.circular(18),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Image.memory(
-                    post.imageBytes!,
-                    key: const ValueKey('post-image'),
-                    width: double.infinity,
-                    height: 140,
-                    fit: BoxFit.cover,
-                    semanticLabel: post.title,
-                    errorBuilder: (_, error, stackTrace) => const SizedBox(
-                      height: 120,
-                      child: Center(
-                        child: Text('Зураг харуулах боломжгүй байна'),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ] else ...[
-            Container(
-              key: const ValueKey('post-avatar'),
-              height: 140,
-              width: double.infinity,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    accent.withValues(alpha: .08),
-                    accent.withValues(alpha: .23),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Semantics(
-                label: post.avatar.label,
-                child: post.avatar.assetPath != null
-                    ? Image.asset(
-                        post.avatar.assetPath!,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.contain,
-                      )
-                    : Text(
-                        post.avatar.symbol,
-                        style: const TextStyle(fontSize: 64),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          Text(
-            post.title,
-            style: const TextStyle(
-              fontSize: 16,
-              height: 1.4,
-              fontWeight: FontWeight.w800,
+          const SizedBox(height: 6),
+          SizedBox(
+            height: scale(12 * 1.5 * 2),
+            child: Text(
+              post.body,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, height: 1.5, color: muted),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            post.body,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 13, height: 1.65, color: muted),
-          ),
-          TextButton(
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              useSafeArea: true,
-              isScrollControlled: true,
-              showDragHandle: true,
-              builder: (context) => SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SectionTitle(post.title),
-                    const SizedBox(height: 12),
-                    Text(post.author),
-                    const SizedBox(height: 16),
-                    Text(post.body, style: const TextStyle(height: 1.6)),
-                    if (post.price != null) ...[
-                      const SizedBox(height: 16),
-                      Text('Үнэ: ${post.price}'),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            child: const Text('Дэлгэрэнгүй'),
-          ),
-          const SizedBox(height: 10),
-          Text(
             post.author,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            post.timeLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: muted),
           ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (post.price != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: .1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'Үнэ: ${post.price}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: accent,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                )
-              else
-                Text(post.time, style: TextStyle(fontSize: 11, color: muted)),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: post.liked ? 'Таалагдсаныг болих' : 'Таалагдлаа',
-                    onPressed: onLike,
-                    icon: Icon(
-                      post.liked ? Icons.favorite : Icons.favorite_border,
-                      size: 20,
-                      color: post.liked ? const Color(0xFFDA4F89) : muted,
-                    ),
-                  ),
-                  Text(
-                    '${post.likes}',
-                    style: TextStyle(fontSize: 12, color: muted),
-                  ),
-                  TextButton.icon(
-                    onPressed: onComments,
-                    style: TextButton.styleFrom(foregroundColor: muted),
-                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                    label: Text('${post.comments.length}'),
-                  ),
-                ],
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: onDetails,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
               ),
-            ],
+              child: const Text('Дэлгэрэнгүй'),
+            ),
+          ),
+          _PostActions(
+            post: post,
+            onLike: onLike,
+            onLikers: onLikers,
+            onComments: onComments,
           ),
         ],
       ),
     );
   }
+}
+
+/// Like button, a tappable like count (opens who reacted) and comments.
+class _PostActions extends StatelessWidget {
+  const _PostActions({
+    required this.post,
+    required this.onLike,
+    required this.onLikers,
+    required this.onComments,
+  });
+  final Post post;
+  final VoidCallback onLike;
+  final VoidCallback onLikers;
+  final VoidCallback onComments;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: post.liked ? 'Таалагдсаныг болих' : 'Таалагдлаа',
+          onPressed: onLike,
+          visualDensity: VisualDensity.compact,
+          icon: Icon(
+            post.liked ? Icons.favorite : Icons.favorite_border,
+            size: 20,
+            color: post.liked ? const Color(0xFFDA4F89) : muted,
+          ),
+        ),
+        Tooltip(
+          message: 'Хэн таалагдсаныг харах',
+          child: InkWell(
+            key: const ValueKey('open-post-likers'),
+            onTap: onLikers,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              child: Text(
+                '${post.likes}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: muted,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: onComments,
+          style: TextButton.styleFrom(
+            foregroundColor: muted,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+          ),
+          icon: const Icon(Icons.chat_bubble_outline, size: 18),
+          label: Text('${post.comments.length}'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PostDetails extends StatelessWidget {
+  const _PostDetails({
+    required this.post,
+    required this.onLike,
+    required this.onLikers,
+    required this.onComments,
+  });
+  final Post post;
+  final VoidCallback onLike;
+  final VoidCallback onLikers;
+  final VoidCallback onComments;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final accent = _categoryAccent(context, post.category);
+    Widget fact(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 13, color: muted)),
+          ),
+        ],
+      ),
+    );
+    return SingleChildScrollView(
+      key: const ValueKey('post-details'),
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _CategoryChip(category: post.category),
+          ),
+          const SizedBox(height: 12),
+          SectionTitle(post.title),
+          const SizedBox(height: 14),
+          _PostVisual(post: post, height: post.hasImage ? 200 : 120),
+          if (post.price != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'Үнэ: ${post.price}',
+                style: TextStyle(
+                  fontSize: 17,
+                  color: accent,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(post.body, style: const TextStyle(fontSize: 15, height: 1.6)),
+          const SizedBox(height: 18),
+          Divider(color: Theme.of(context).dividerColor, height: 1),
+          const SizedBox(height: 14),
+          fact(Icons.person_outline_rounded, post.author),
+          fact(Icons.schedule_rounded, post.timeLabel),
+          fact(
+            Icons.group_outlined,
+            'Харагдах хүрээ: ${audienceLabel(post.audienceCourses)}',
+          ),
+          _PostActions(
+            post: post,
+            onLike: onLike,
+            onLikers: onLikers,
+            onComments: onComments,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lists who reacted to a post.
+class _LikersSheet extends StatefulWidget {
+  const _LikersSheet({required this.post, this.load});
+  final Post post;
+
+  /// Fetches the names from the backend; null uses the post's local list.
+  final Future<List<String>> Function()? load;
+
+  @override
+  State<_LikersSheet> createState() => _LikersSheetState();
+}
+
+class _LikersSheetState extends State<_LikersSheet> {
+  late Future<List<String>> _names = _fetch();
+
+  Future<List<String>> _fetch() =>
+      widget.load?.call() ?? Future.value(widget.post.likers);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+    child: SizedBox(
+      height: MediaQuery.sizeOf(context).height * .48,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionTitle('Таалагдсан хүмүүс'),
+          const SizedBox(height: 12),
+          Expanded(
+            child: FutureBuilder<List<String>>(
+              future: _names,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${snapshot.error}', textAlign: TextAlign.center),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _names = _fetch()),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Дахин оролдох'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final names = snapshot.data ?? const [];
+                if (names.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'Одоогоор хэн ч таалагдсан гэж дараагүй байна.',
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: names.length,
+                  itemBuilder: (context, index) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.purple.withValues(alpha: .12),
+                      child: const Icon(
+                        Icons.favorite,
+                        size: 18,
+                        color: Color(0xFFDA4F89),
+                      ),
+                    ),
+                    title: Text(names[index]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 Future<void> _showPostImage(BuildContext context, Post post) =>
@@ -473,11 +835,17 @@ Future<void> _showPostImage(BuildContext context, Post post) =>
                   minScale: .8,
                   maxScale: 5,
                   child: Center(
-                    child: Image.memory(
-                      post.imageBytes!,
-                      fit: BoxFit.contain,
-                      semanticLabel: post.title,
-                    ),
+                    child: post.imageBytes != null
+                        ? Image.memory(
+                            post.imageBytes!,
+                            fit: BoxFit.contain,
+                            semanticLabel: post.title,
+                          )
+                        : Image.network(
+                            post.imageUrl!,
+                            fit: BoxFit.contain,
+                            semanticLabel: post.title,
+                          ),
                   ),
                 ),
               ),
@@ -496,9 +864,29 @@ Future<void> _showPostImage(BuildContext context, Post post) =>
       ),
     );
 
+/// Groups digits with thousands separators as the price is typed.
+class _ThousandsFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .replaceFirst(RegExp(r'^0+(?=\d)'), '');
+    final text = groupThousands(digits);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
 class _PostComposer extends StatefulWidget {
-  const _PostComposer({this.pickImage});
+  const _PostComposer({this.pickImage, required this.author, this.userCourse});
   final Future<XFile?> Function()? pickImage;
+  final String author;
+  final int? userCourse;
   @override
   State<_PostComposer> createState() => _PostComposerState();
 }
@@ -511,6 +899,9 @@ class _PostComposerState extends State<_PostComposer> {
   final price = TextEditingController();
   PostCategory category = PostCategory.sale;
   PostAvatar avatar = PostAvatar.books;
+
+  /// Courses that may see the post; empty means everyone.
+  final Set<int> audience = {};
   Uint8List? imageBytes;
   String? imageName;
   String? imageError;
@@ -601,8 +992,11 @@ class _PostComposerState extends State<_PostComposer> {
     Navigator.pop(
       context,
       Post(
-        author: 'Гүндэгмаа • 2-р курс',
-        subtitle: 'Software Engineering',
+        author: widget.author,
+        subtitle: '',
+        isMine: true,
+        createdAt: DateTime.now(),
+        audienceCourses: audience.toList()..sort(),
         title: title.text.trim(),
         body: body.text.trim(),
         category: category,
@@ -688,15 +1082,16 @@ class _PostComposerState extends State<_PostComposer> {
               TextFormField(
                 controller: price,
                 keyboardType: TextInputType.number,
+                inputFormatters: [_ThousandsFormatter()],
                 decoration: const InputDecoration(
                   labelText: 'Үнэ (заавал биш)',
+                  hintText: '25,000',
                   suffixText: '₮',
                 ),
                 validator: (value) =>
                     value != null &&
                         value.trim().isNotEmpty &&
-                        (int.tryParse(value.trim()) == null ||
-                            int.parse(value.trim()) < 0)
+                        int.tryParse(value.replaceAll(',', '').trim()) == null
                     ? 'Үнийг эерэг бүхэл тоогоор оруулна уу'
                     : null,
               ),
@@ -810,6 +1205,50 @@ class _PostComposerState extends State<_PostComposer> {
                 ],
               ),
             ],
+            const SizedBox(height: 18),
+            const Text(
+              'Хэнд харуулах вэ?',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              audience.isEmpty
+                  ? 'Бүх курсын оюутанд харагдана.'
+                  : 'Зөвхөн ${audienceLabel(audience.toList()..sort())}-ын '
+                        'оюутанд харагдана.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  key: const ValueKey('audience-all'),
+                  label: const Text('Бүгд'),
+                  selected: audience.isEmpty,
+                  onSelected: (_) => setState(audience.clear),
+                ),
+                for (final course in postAudienceCourses)
+                  FilterChip(
+                    key: ValueKey('audience-$course'),
+                    label: Text(
+                      course == widget.userCourse
+                          ? '$course-р курс (миний)'
+                          : '$course-р курс',
+                    ),
+                    selected: audience.contains(course),
+                    onSelected: (selected) => setState(
+                      () => selected
+                          ? audience.add(course)
+                          : audience.remove(course),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: pickingImage ? null : publish,
@@ -824,8 +1263,9 @@ class _PostComposerState extends State<_PostComposer> {
 }
 
 class _CommentsSheet extends StatefulWidget {
-  const _CommentsSheet({required this.post});
+  const _CommentsSheet({required this.post, required this.userName});
   final Post post;
+  final String userName;
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
 }
@@ -841,7 +1281,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void send() {
     if (controller.text.trim().isEmpty) return;
     setState(() {
-      widget.post.comments.add('Гүндэгмаа: ${controller.text.trim()}');
+      widget.post.comments.add('${widget.userName}: ${controller.text.trim()}');
       controller.clear();
     });
   }

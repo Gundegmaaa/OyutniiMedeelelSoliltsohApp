@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:mtc_student_hub/auth/auth_api.dart';
 import 'package:mtc_student_hub/main.dart';
 import 'package:mtc_student_hub/models/learning.dart';
+import 'package:mtc_student_hub/services/post_api.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -38,7 +39,22 @@ void main() {
       ),
     );
     addTearDown(api.close);
-    await tester.pumpWidget(StudentHubApp(authApi: api));
+    // An empty community backend that accepts every new post.
+    final postApi = PostApi(
+      baseUrl: 'http://test.invalid',
+      client: MockClient(
+        (request) async => request.method == 'GET'
+            ? http.Response('[]', 200)
+            : http.Response(
+                jsonEncode({
+                  'data': {'id': 1},
+                }),
+                201,
+              ),
+      ),
+    );
+    addTearDown(postApi.close);
+    await tester.pumpWidget(StudentHubApp(authApi: api, postApi: postApi));
     await tester.pumpAndSettle();
   }
 

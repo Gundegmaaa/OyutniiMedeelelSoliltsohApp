@@ -98,7 +98,10 @@ void main() {
         expect(post.category, category);
         expect(post.avatar, PostAvatar.home);
         expect(post.imageBytes, isNull);
-        expect(post.price, category == PostCategory.rental ? '50000₮' : isNull);
+        expect(
+          post.price,
+          category == PostCategory.rental ? '50,000₮' : isNull,
+        );
         final filter = find.widgetWithText(ChoiceChip, category.label);
         await tester.ensureVisible(filter);
         await tester.tap(filter);
@@ -128,7 +131,7 @@ void main() {
       await publish(tester);
       expect(stateKey.currentState!.posts.first.imageBytes, orderedEquals(png));
       expect(stateKey.currentState!.posts.first.imageName, 'book.png');
-      expect(stateKey.currentState!.posts.first.price, '15000₮');
+      expect(stateKey.currentState!.posts.first.price, '15,000₮');
       final photo = find.byKey(const ValueKey('post-image'));
       expect(photo, findsOneWidget);
       await tester.ensureVisible(photo);

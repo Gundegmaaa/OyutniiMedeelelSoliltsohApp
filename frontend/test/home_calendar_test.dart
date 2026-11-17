@@ -10,7 +10,9 @@ void main() {
   testWidgets('Calendar changes month and shows the selected weekday lessons', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(430, 1600);
+    // Tall enough that the lesson cards below the filter chips and the
+    // weekly-timetable button are built without scrolling.
+    tester.view.physicalSize = const Size(430, 1800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -58,6 +60,74 @@ void main() {
     expect(find.text('10 сарын 20 • Мягмар'), findsOneWidget);
     expect(find.text('Математик'), findsOneWidget);
     expect(find.text('Өнөөдрийн хичээл'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('The weekly timetable sheet lists all seven days', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.dark),
+        home: Scaffold(body: HomeScreen(today: DateTime(2026, 10, 20))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('open-week-schedule'));
+    await tester.scrollUntilVisible(
+      button,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Долоо хоногийн хуваарь харах'), findsOneWidget);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(const ValueKey('week-schedule-sheet'));
+    expect(
+      find.descendant(of: sheet, matching: find.text('Хичээлийн хуваарь')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('week-day-1')),
+        matching: find.byKey(const ValueKey('week-day-today')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: sheet,
+        matching: find.text('10:00 • Математик • 301 тоот', findRichText: true),
+      ),
+      findsOneWidget,
+    );
+    for (final day in ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан']) {
+      expect(
+        find.descendant(of: sheet, matching: find.text(day)),
+        findsOneWidget,
+      );
+    }
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('week-day-6')),
+      200,
+      scrollable: find.descendant(of: sheet, matching: find.byType(Scrollable)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: sheet, matching: find.text('Хичээлгүй')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Ням')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

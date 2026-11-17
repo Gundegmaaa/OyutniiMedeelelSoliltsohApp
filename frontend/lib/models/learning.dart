@@ -111,6 +111,58 @@ const informationProblems = [
   ),
 ];
 
+/// A demo podium student. [completed] uses the same activity ids as
+/// [LearningProgress.completed]: `quiz-<program>` and
+/// `problem-<program>-<difficulty>`.
+class LeaderboardStudent {
+  const LeaderboardStudent({
+    required this.rank,
+    required this.name,
+    required this.xp,
+    required this.completed,
+  });
+  final int rank;
+  final String name;
+  final int xp;
+  final List<String> completed;
+}
+
+const demoLeaders = [
+  LeaderboardStudent(
+    rank: 1,
+    name: 'Бат-Эрдэнэ',
+    xp: 1250,
+    completed: [
+      'quiz-0',
+      'problem-0-0',
+      'problem-0-1',
+      'problem-0-2',
+      'quiz-1',
+      'problem-1-0',
+      'problem-1-1',
+    ],
+  ),
+  LeaderboardStudent(
+    rank: 2,
+    name: 'Анужин',
+    xp: 1190,
+    completed: [
+      'quiz-0',
+      'problem-0-0',
+      'quiz-1',
+      'problem-1-0',
+      'problem-1-1',
+      'problem-1-2',
+    ],
+  ),
+  LeaderboardStudent(
+    rank: 3,
+    name: 'Тэмүүлэн',
+    xp: 1110,
+    completed: ['quiz-0', 'problem-0-0', 'problem-0-1', 'problem-1-0'],
+  ),
+];
+
 // One reward per activity, so repeated practice cannot inflate the demo rank.
 class LearningProgress {
   final Set<String> completed = {};

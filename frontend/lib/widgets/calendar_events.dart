@@ -26,6 +26,12 @@ IconData calendarEventIcon(CalendarEventType type) {
 String _dateLabel(DateTime date) =>
     '${date.year} оны ${date.month}-р сарын ${date.day}';
 
+String _shortDateLabel(DateTime date) =>
+    '${date.year}.${date.month.toString().padLeft(2, '0')}.'
+    '${date.day.toString().padLeft(2, '0')}';
+
+DateTime _dayOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
 String _timeLabel(int minutes) =>
     '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
     '${(minutes % 60).toString().padLeft(2, '0')}';
@@ -35,21 +41,32 @@ Future<CalendarEvent?> showCalendarEventEditor(
   required DateTime date,
   CalendarEvent? event,
   Future<bool> Function(CalendarEvent)? onSave,
+  DateTime? today,
 }) {
   return showModalBottomSheet<CalendarEvent>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     constraints: const BoxConstraints(maxWidth: 600),
-    builder: (context) =>
-        _CalendarEventEditor(date: date, event: event, onSave: onSave),
+    builder: (context) => _CalendarEventEditor(
+      date: date,
+      event: event,
+      onSave: onSave,
+      today: _dayOnly(today ?? DateTime.now()),
+    ),
   );
 }
 
 class _CalendarEventEditor extends StatefulWidget {
-  const _CalendarEventEditor({required this.date, this.event, this.onSave});
+  const _CalendarEventEditor({
+    required this.date,
+    required this.today,
+    this.event,
+    this.onSave,
+  });
 
   final DateTime date;
+  final DateTime today;
   final CalendarEvent? event;
   final Future<bool> Function(CalendarEvent)? onSave;
 
@@ -66,6 +83,9 @@ class _CalendarEventEditorState extends State<_CalendarEventEditor> {
   int? _minutes;
   bool _saving = false;
   bool _saveFailed = false;
+  bool _pastDateRejected = false;
+
+  bool get _isNew => widget.event == null;
 
   @override
   void initState() {
@@ -86,7 +106,13 @@ class _CalendarEventEditorState extends State<_CalendarEventEditor> {
   }
 
   Future<void> _chooseDate() async {
-    final firstDate = DateTime(1900);
+    final today = widget.today;
+    final eventDate = widget.event?.date;
+    // New notes cannot go into the past; an existing past note may stay
+    // on (or move between) its own date and later days.
+    final firstDate = eventDate != null && eventDate.isBefore(today)
+        ? _dayOnly(eventDate)
+        : today;
     final lastDate = DateTime(2100, 12, 31);
     final initialDate = _date.isBefore(firstDate)
         ? firstDate
@@ -103,7 +129,10 @@ class _CalendarEventEditorState extends State<_CalendarEventEditor> {
       confirmText: 'Сонгох',
     );
     if (selected != null && mounted) {
-      setState(() => _date = selected);
+      setState(() {
+        _date = selected;
+        _pastDateRejected = false;
+      });
     }
   }
 
@@ -129,7 +158,11 @@ class _CalendarEventEditorState extends State<_CalendarEventEditor> {
 
   Future<void> _save() async {
     if (_saving) return;
-    if (!_formKey.currentState!.validate()) return;
+    final pastDate = _isNew && _dayOnly(_date).isBefore(widget.today);
+    if (_pastDateRejected != pastDate) {
+      setState(() => _pastDateRejected = pastDate);
+    }
+    if (!_formKey.currentState!.validate() || pastDate) return;
     final event = CalendarEvent(
       id: widget.event?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       title: _title.text.trim(),
@@ -302,11 +335,27 @@ class _CalendarEventEditorState extends State<_CalendarEventEditor> {
                     style: OutlinedButton.styleFrom(
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.all(16),
+                      side: _pastDateRejected
+                          ? BorderSide(color: theme.colorScheme.error)
+                          : null,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                   ),
+                  if (_pastDateRejected) ...[
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'Өнгөрсөн өдөр сонгох боломжгүй.',
+                        key: const ValueKey('event-date-error'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -395,9 +444,11 @@ class CalendarEventCard extends StatelessWidget {
     required this.event,
     required this.onEdit,
     required this.onDelete,
+    this.showDate = false,
   });
 
   final CalendarEvent event;
+  final bool showDate;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -458,16 +509,43 @@ class CalendarEventCard extends StatelessWidget {
               ),
             ),
           ),
-          if (event.minutes != null) ...[
+          if (showDate || event.minutes != null) ...[
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 14,
+              runSpacing: 4,
               children: [
-                Icon(Icons.schedule_rounded, size: 15, color: color),
-                const SizedBox(width: 5),
-                Text(
-                  _timeLabel(event.minutes!),
-                  style: TextStyle(color: color, fontWeight: FontWeight.w700),
-                ),
+                if (showDate)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.event_rounded, size: 15, color: color),
+                      const SizedBox(width: 5),
+                      Text(
+                        _shortDateLabel(event.date),
+                        key: ValueKey('event-date-${event.id}'),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                if (event.minutes != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.schedule_rounded, size: 15, color: color),
+                      const SizedBox(width: 5),
+                      Text(
+                        _timeLabel(event.minutes!),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ],

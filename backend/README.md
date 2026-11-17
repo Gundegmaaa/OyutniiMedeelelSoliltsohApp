@@ -58,6 +58,10 @@ Backend: `http://localhost:8000`. Health: `GET /health/` → `{"status":"ok"}`.
 | POST | `/api/v1/auth/login/` | Нэвтрэх |
 | GET | `/api/v1/auth/me/` | Нэвтэрсэн хэрэглэгчийн мэдээлэл |
 | POST | `/api/v1/auth/logout/` | Одоогийн session-оос гарах |
+| GET | `/api/v1/posts/` | Зарын жагсаалт. Нэвтэрсэн оюутны курст харагдах заруудыг л буцаана |
+| POST | `/api/v1/posts/` | Зар нэмэх. `audience_courses` (`"1,2"`, хоосон бол бүгд) талбараар хэнд харуулахыг заана |
+| POST | `/api/v1/posts/<id>/like/` | Таалагдсан тэмдэглэх эсвэл болих (нэвтэрсэн байх шаардлагатай) |
+| GET | `/api/v1/posts/<id>/likes/` | Хэн хэн таалагдсан гэж дарсан жагсаалт |
 
 ## Админ
 

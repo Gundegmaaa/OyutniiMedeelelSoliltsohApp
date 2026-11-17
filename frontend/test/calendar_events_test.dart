@@ -424,4 +424,155 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('A new note cannot be added to a past date', (tester) async {
+    final store = _FailingStore([
+      CalendarEvent(
+        id: 'old-exam',
+        title: 'Өнгөрсөн шалгалт',
+        date: DateTime(2026, 10, 19),
+        type: CalendarEventType.exam,
+      ),
+    ]);
+    await _openHome(tester, store: store);
+    await _tapHome(tester, find.byKey(const ValueKey('calendar-2026-10-19')));
+    await _tapHome(tester, find.byKey(const ValueKey('add-calendar-event')));
+    expect(
+      find.text('Өнгөрсөн өдөрт тэмдэглэл нэмэх боломжгүй.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('event-title')), findsNothing);
+
+    // An existing past note can still be edited; its own date stays allowed.
+    await _tapHome(tester, find.byKey(const ValueKey('edit-event-old-exam')));
+    await _tap(tester, find.byKey(const ValueKey('event-date')));
+    expect(
+      tester.widget<DatePickerDialog>(find.byType(DatePickerDialog)).firstDate,
+      DateTime(2026, 10, 19),
+    );
+    await _tap(tester, find.text('Болих').last);
+    await _enter(tester, 'event-title', 'Засварласан шалгалт');
+    await _tap(tester, find.byKey(const ValueKey('save-calendar-event')));
+    expect(store.events.single.title, 'Засварласан шалгалт');
+    expect(store.events.single.date, DateTime(2026, 10, 19));
+
+    await _tapHome(tester, find.byKey(const ValueKey('delete-event-old-exam')));
+    await _tap(tester, find.byKey(const ValueKey('confirm-delete-event')));
+    expect(store.events, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('The editor rejects a past date for a new note', (tester) async {
+    var saveCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showCalendarEventEditor(
+                context,
+                date: DateTime(2026, 10, 15),
+                today: _today,
+                onSave: (_) async {
+                  saveCalls++;
+                  return true;
+                },
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await _enter(tester, 'event-title', 'Хоцорсон тэмдэглэл');
+    await _tap(tester, find.byKey(const ValueKey('save-calendar-event')));
+    expect(find.text('Өнгөрсөн өдөр сонгох боломжгүй.'), findsOneWidget);
+    expect(saveCalls, 0);
+    await _tap(tester, find.byKey(const ValueKey('event-date')));
+    expect(
+      tester.widget<DatePickerDialog>(find.byType(DatePickerDialog)).firstDate,
+      _today,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('A type filter lists that type across all dates', (tester) async {
+    final store = _FailingStore([
+      CalendarEvent(
+        id: 'exam-past',
+        title: 'Өнгөрсөн шалгалт',
+        date: DateTime(2026, 10, 15),
+        type: CalendarEventType.exam,
+      ),
+      CalendarEvent(
+        id: 'exam-late',
+        title: 'Төгсгөлийн шалгалт',
+        date: DateTime(2026, 11, 20),
+        type: CalendarEventType.exam,
+        minutes: 600,
+      ),
+      CalendarEvent(
+        id: 'exam-soon',
+        title: 'Явцын шалгалт',
+        date: DateTime(2026, 10, 25),
+        type: CalendarEventType.exam,
+      ),
+      CalendarEvent(
+        id: 'task',
+        title: 'Бие даалт илгээх',
+        date: DateTime(2026, 10, 25),
+        type: CalendarEventType.assignment,
+      ),
+    ]);
+    await _openHome(
+      tester,
+      store: store,
+      size: const Size(375, 2600),
+      brightness: Brightness.dark,
+    );
+    expect(
+      find.byKey(const ValueKey('event-marker-2026-10-25-assignment')),
+      findsOneWidget,
+    );
+
+    await _tapHome(tester, find.byKey(const ValueKey('event-filter-exam')));
+    expect(find.text('Шалгалт • 3 тэмдэглэл'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('event-marker-2026-10-25-assignment')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('event-marker-2026-10-25-exam')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('event-card-task')), findsNothing);
+    final tops = [
+      for (final id in ['exam-soon', 'exam-late', 'exam-past'])
+        tester.getTopLeft(find.byKey(ValueKey('event-card-$id'))).dy,
+    ];
+    expect(tops[0] < tops[1] && tops[1] < tops[2], isTrue);
+    expect(find.text('2026.11.20'), findsOneWidget);
+    expect(find.text('2026.10.15'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('event-card-exam-late')),
+        matching: find.text('10:00'),
+      ),
+      findsOneWidget,
+    );
+
+    await _tapHome(tester, find.byKey(const ValueKey('event-filter-seminar')));
+    expect(find.text('Энэ төрлийн тэмдэглэл алга.'), findsOneWidget);
+
+    await _tapHome(tester, find.byKey(const ValueKey('event-filter-seminar')));
+    expect(find.text('2026.10.20 • 0 тэмдэглэл'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('event-marker-2026-10-25-assignment')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
