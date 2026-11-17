@@ -4,8 +4,12 @@ from django.db import models
 class Post(models.Model):
     POST_TYPES = [
         ('sell', 'Бараа зарах'),
+        ('exchange', 'Солилцох'),
+        ('rental', 'Түрээслүүлэх'),
         ('free', 'Үнэгүй өгөх'),
         ('info', 'Мэдээлэл хуваалцах'),
+        ('question', 'Асуулт'),
+        ('teacher', 'Багш'),
     ]
 
     title = models.CharField(max_length=255)

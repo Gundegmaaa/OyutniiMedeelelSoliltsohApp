@@ -5,14 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/post.dart';
+import '../services/post_api.dart';
 import '../theme.dart';
 import '../widgets/ui.dart';
 
 class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key, this.pickPostImage});
+  const CommunityScreen({super.key, this.pickPostImage, this.postApi});
 
   /// Allows a host or a widget test to provide its own gallery picker.
   final Future<XFile?> Function()? pickPostImage;
+  final PostApi? postApi;
 
   @override
   State<CommunityScreen> createState() => CommunityScreenState();
@@ -21,6 +23,25 @@ class CommunityScreen extends StatefulWidget {
 class CommunityScreenState extends State<CommunityScreen> {
   final posts = demoPosts();
   int filter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPosts();
+  }
+
+  Future<void> _loadPosts() async {
+    final api = widget.postApi;
+    if (api == null) return;
+    try {
+      final remotePosts = await api.listPosts();
+      if (mounted && remotePosts.isNotEmpty) {
+        setState(() => posts.insertAll(0, remotePosts));
+      }
+    } on PostApiException {
+      // Keep the demo feed available if the API cannot be reached.
+    }
+  }
 
   Future<void> createPost() async {
     final result = await showModalBottomSheet<Post>(
@@ -31,13 +52,30 @@ class CommunityScreenState extends State<CommunityScreen> {
       builder: (context) => _PostComposer(pickImage: widget.pickPostImage),
     );
     if (result != null && mounted) {
+      final api = widget.postApi;
+      if (api != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Зарыг серверт хадгалж байна…')),
+        );
+        try {
+          await api.createPost(result);
+        } on PostApiException catch (error) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(error.message)));
+          return;
+        }
+      }
+      if (!mounted) return;
       setState(() {
         posts.insert(0, result);
         filter = 0;
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Нийтлэл нэмэгдлээ')));
+      )..hideCurrentSnackBar()
+       ..showSnackBar(const SnackBar(content: Text('Нийтлэл амжилттай нэмэгдлээ')));
     }
   }
 

@@ -7,6 +7,7 @@ import 'screens/auth_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/learning_screen.dart';
+import 'services/post_api.dart';
 import 'theme.dart';
 
 void main() => runApp(const StudentHubApp());
@@ -171,6 +172,20 @@ class StudentHub extends StatefulWidget {
 }
 
 class _StudentHubState extends State<StudentHub> {
+  late final PostApi _postApi;
+
+  @override
+  void initState() {
+    super.initState();
+    _postApi = PostApi();
+  }
+
+  @override
+  void dispose() {
+    _postApi.close();
+    super.dispose();
+  }
+
   int tab = 0;
   final communityKey = GlobalKey<CommunityScreenState>();
   final progress = LearningProgress();
@@ -427,7 +442,7 @@ class _StudentHubState extends State<StudentHub> {
                     ? widget.user.displayName
                     : widget.user.firstName,
               ),
-              CommunityScreen(key: communityKey),
+              CommunityScreen(key: communityKey, postApi: _postApi),
               LearningScreen(
                 progress: progress,
                 onProgress: () => setState(() {}),

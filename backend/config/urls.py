@@ -12,6 +12,7 @@ def api_home(request):
             "login": "/api/v1/auth/login/",
             "register": "/api/v1/auth/register/",
             "verify_email": "/api/v1/auth/register/verify/",
+            "posts": "/api/v1/posts/",
         }
     })
 
@@ -20,4 +21,5 @@ urlpatterns = [
     path("", api_home, name="api-home"),
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("login.urls")),
+    path("api/v1/posts/", include("add_post.urls")),
 ]
