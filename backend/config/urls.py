@@ -9,7 +9,7 @@ from django.http import JsonResponse
 def api_home(request):
     return JsonResponse({
         "success": True,
-        "message": "Оюутны мэдээлэл солилцох системийн API ажиллаж байна.",
+        "message": "Оюутны мэдээлэл солилцох системийн APIi ажиллаж байна.",
         "endpoints": {
             "login": "/api/v1/auth/login/",
             "register": "/api/v1/auth/register/",
