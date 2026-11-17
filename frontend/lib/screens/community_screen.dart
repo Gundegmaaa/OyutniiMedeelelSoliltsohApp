@@ -191,7 +191,10 @@ class CommunityScreenState extends State<CommunityScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        _CommunityBanner(onCreate: createPost),
+        _CommunityBanner(
+          onCreate: createPost,
+          postCount: posts.where((p) => p.visibleTo(widget.userCourse)).length,
+        ),
         const SizedBox(height: 22),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -267,8 +270,9 @@ class CommunityScreenState extends State<CommunityScreen> {
 }
 
 class _CommunityBanner extends StatelessWidget {
-  const _CommunityBanner({required this.onCreate});
+  const _CommunityBanner({required this.onCreate, required this.postCount});
   final VoidCallback onCreate;
+  final int postCount;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -278,63 +282,228 @@ class _CommunityBanner extends StatelessWidget {
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [AppColors.purple, Color(0xFF9D66EE)],
+        colors: [Color(0xFF6B30DC), Color(0xFF8B4FEA), Color(0xFFB083F5)],
       ),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.purple.withValues(alpha: .22),
+          blurRadius: 24,
+          offset: const Offset(0, 10),
+        ),
+      ],
     ),
     child: Stack(
       children: [
+        // Soft shapes behind the content.
         Positioned(
-          right: -25,
-          top: -35,
+          right: -50,
+          top: -60,
+          child: Container(
+            width: 190,
+            height: 190,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: .08),
+            ),
+          ),
+        ),
+        Positioned(
+          left: -40,
+          bottom: -70,
           child: Container(
             width: 150,
             height: 150,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withValues(alpha: .12),
-                width: 28,
+                color: Colors.white.withValues(alpha: .09),
+                width: 22,
+              ),
+            ),
+          ),
+        ),
+        // What students share here: books, questions, ideas.
+        const Positioned(
+          right: 16,
+          top: 18,
+          child: ExcludeSemantics(
+            child: SizedBox(
+              width: 96,
+              height: 104,
+              child: Stack(
+                children: [
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: _BannerTile(
+                      symbol: '📚',
+                      angle: .14,
+                      color: Color(0xFFFFE3A8),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    top: 26,
+                    child: _BannerTile(
+                      symbol: '💬',
+                      angle: -.16,
+                      color: Color(0xFFD9C8FF),
+                    ),
+                  ),
+                  Positioned(
+                    right: 6,
+                    bottom: 0,
+                    child: _BannerTile(
+                      symbol: '💡',
+                      angle: .06,
+                      color: Color(0xFFC6F3E4),
+                      size: 40,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Хуваалцъя. Холбогдъё.',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .16),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: .18),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.forum_rounded, size: 13, color: Colors.white),
+                    SizedBox(width: 6),
+                    Text(
+                      'COMMUNITY',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 7),
-              const Text(
-                'Ном, шинэ санаа, хэрэгтэй зөвлөгөө.\nЧиний оюутны хүрээлэл.',
-                style: TextStyle(
-                  color: Color(0xFFEDE1FF),
-                  height: 1.5,
-                  fontSize: 13,
+              const SizedBox(height: 14),
+              // Leaves room for the tiles on the right.
+              const Padding(
+                padding: EdgeInsets.only(right: 104),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Хуваалцъя.\nХолбогдъё.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 25,
+                        height: 1.15,
+                        letterSpacing: -.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Ном, шинэ санаа, хэрэгтэй зөвлөгөө — чиний оюутны хүрээлэл.',
+                      style: TextStyle(
+                        color: Color(0xFFF1E8FF),
+                        height: 1.45,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 15),
-              FilledButton.icon(
-                onPressed: onCreate,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.purple,
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.add_rounded, size: 19),
-                label: const Text('Хуваалцах'),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: onCreate,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.purple,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    label: const Text('Хуваалцах'),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '$postCount нийтлэл',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ],
+    ),
+  );
+}
+
+/// A small tilted emoji tile used as banner decoration.
+class _BannerTile extends StatelessWidget {
+  const _BannerTile({
+    required this.symbol,
+    required this.angle,
+    required this.color,
+    this.size = 48,
+  });
+  final String symbol;
+  final double angle;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Transform.rotate(
+    angle: angle,
+    child: Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(size * .32),
+        border: Border.all(color: Colors.white.withValues(alpha: .6), width: 2),
+        boxShadow: const [
+          BoxShadow(color: Color(0x553A1688), offset: Offset(3, 5)),
+        ],
+      ),
+      child: Text(symbol, style: TextStyle(fontSize: size * .46)),
     ),
   );
 }
@@ -1235,11 +1404,7 @@ class _PostComposerState extends State<_PostComposer> {
                 for (final course in postAudienceCourses)
                   FilterChip(
                     key: ValueKey('audience-$course'),
-                    label: Text(
-                      course == widget.userCourse
-                          ? '$course-р курс (миний)'
-                          : '$course-р курс',
-                    ),
+                    label: Text('$course-р курс'),
                     selected: audience.contains(course),
                     onSelected: (selected) => setState(
                       () => selected
