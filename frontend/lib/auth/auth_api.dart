@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'auth_user.dart';
+import 'api_base_url.dart';
 import 'http_client.dart';
 
 class AuthApiException implements Exception {
@@ -29,12 +30,7 @@ class AuthApi {
   AuthApi({
     String? baseUrl,
     http.Client? client,
-  })  : _baseUrl = (baseUrl ??
-            const String.fromEnvironment(
-              'API_BASE_URL',
-              defaultValue: 'https://oyutniimedeelelsoliltsohapp-1.onrender.com',
-            ))
-            .replaceAll(RegExp(r'/+$'), ''),
+  })  : _baseUrl = (baseUrl ?? apiBaseUrl).replaceAll(RegExp(r'/+$'), ''),
         _client = client ?? createAuthHttpClient();
 
   final String _baseUrl;

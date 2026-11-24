@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../auth/http_client.dart';
+import '../auth/api_base_url.dart';
 import '../models/post.dart';
 
 class PostApiException implements Exception {
@@ -20,14 +21,7 @@ typedef LikeState = ({bool liked, int count});
 
 class PostApi {
   PostApi({String? baseUrl, http.Client? client})
-    : _baseUrl =
-          (baseUrl ??
-                  const String.fromEnvironment(
-                    'API_BASE_URL',
-                    defaultValue:
-                        'https://oyutniimedeelelsoliltsohapp-1.onrender.com',
-                  ))
-              .replaceAll(RegExp(r'/+$'), ''),
+    : _baseUrl = (baseUrl ?? apiBaseUrl).replaceAll(RegExp(r'/+$'), ''),
       _client = client ?? createAuthHttpClient();
 
   final String _baseUrl;
