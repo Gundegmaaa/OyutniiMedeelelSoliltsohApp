@@ -16,6 +16,7 @@ class CommunityScreen extends StatefulWidget {
     this.postApi,
     this.userName = 'Гүндэгмаа',
     this.userCourse = 2,
+    this.role = 'student',
   });
 
   /// Allows a host or a widget test to provide its own gallery picker.
@@ -25,6 +26,7 @@ class CommunityScreen extends StatefulWidget {
   /// The signed-in student, used as the author of new posts and comments.
   final String userName;
   final int? userCourse;
+  final String role;
 
   @override
   State<CommunityScreen> createState() => CommunityScreenState();
@@ -49,8 +51,12 @@ class CommunityScreenState extends State<CommunityScreen> {
     if (api == null) return;
     try {
       final remotePosts = await api.listPosts();
-      if (mounted && remotePosts.isNotEmpty) {
-        setState(() => posts.insertAll(0, remotePosts));
+      if (mounted) {
+        setState(() {
+          posts
+            ..clear()
+            ..addAll(remotePosts);
+        });
       }
     } on PostApiException {
       // Keep the demo feed available if the API cannot be reached.
@@ -61,7 +67,13 @@ class CommunityScreenState extends State<CommunityScreen> {
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
 
-  Future<void> createPost() async {
+  bool get _staff => widget.role == 'teacher' || widget.role == 'admin';
+
+  Future<void> createPost() => _composePost();
+
+  Future<void> editPost(Post post) => _composePost(existing: post);
+
+  Future<void> _composePost({Post? existing}) async {
     final result = await showModalBottomSheet<Post>(
       context: context,
       isScrollControlled: true,
@@ -71,14 +83,20 @@ class CommunityScreenState extends State<CommunityScreen> {
         pickImage: widget.pickPostImage,
         author: _userLabel,
         userCourse: widget.userCourse,
+        initial: existing,
+        canAnnounce: _staff,
       ),
     );
     if (result != null && mounted) {
       final api = widget.postApi;
       if (api != null) {
-        _showMessage('Зарыг серверт хадгалж байна…');
+        _showMessage(existing == null ? 'Зарыг серверт хадгалж байна…' : 'Зарыг шинэчилж байна…');
         try {
-          result.id = await api.createPost(result);
+          if (existing == null) {
+            result.id = await api.createPost(result);
+          } else {
+            await api.updatePost(result);
+          }
         } on PostApiException catch (error) {
           if (!mounted) return;
           _showMessage(error.message);
@@ -87,10 +105,40 @@ class CommunityScreenState extends State<CommunityScreen> {
       }
       if (!mounted) return;
       setState(() {
-        posts.insert(0, result);
+        if (existing == null) {
+          posts.insert(0, result);
+        } else {
+          final index = posts.indexWhere((post) => post.id == existing.id);
+          if (index >= 0) posts[index] = result;
+        }
         filter = 0;
       });
-      _showMessage('Нийтлэл амжилттай нэмэгдлээ');
+      _showMessage(existing == null ? 'Нийтлэл амжилттай нэмэгдлээ' : 'Нийтлэл шинэчлэгдлээ');
+    }
+  }
+
+  Future<void> deletePost(Post post) async {
+    final id = post.id;
+    if (id == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Зарыг устгах уу?'),
+        content: Text('“${post.title}” зарыг устгана.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Болих')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Устгах')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.postApi?.deletePost(id);
+      if (!mounted) return;
+      setState(() => posts.removeWhere((item) => item.id == id));
+      _showMessage('Зар устгагдлаа.');
+    } on PostApiException catch (error) {
+      if (mounted) _showMessage(error.message);
     }
   }
 
@@ -252,6 +300,10 @@ class CommunityScreenState extends State<CommunityScreen> {
                                       onComments: () =>
                                           showComments(visible[i]),
                                       onDetails: () => showDetails(visible[i]),
+                                      canManage: (_staff || visible[i].isMine) &&
+                                          visible[i].id != null,
+                                      onEdit: () => editPost(visible[i]),
+                                      onDelete: () => deletePost(visible[i]),
                                     )
                                   : const SizedBox(),
                             ),
@@ -634,12 +686,18 @@ class _PostCard extends StatelessWidget {
     required this.onLikers,
     required this.onComments,
     required this.onDetails,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
   });
   final Post post;
   final VoidCallback onLike;
   final VoidCallback onLikers;
   final VoidCallback onComments;
   final VoidCallback onDetails;
+  final bool canManage;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -735,6 +793,24 @@ class _PostCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: muted),
           ),
+          if (canManage)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: 'Зар засах',
+                  onPressed: onEdit,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.edit_outlined, size: 19),
+                ),
+                IconButton(
+                  tooltip: 'Зар устгах',
+                  onPressed: onDelete,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                ),
+              ],
+            ),
           const Spacer(),
           SizedBox(
             width: double.infinity,
@@ -1052,10 +1128,18 @@ class _ThousandsFormatter extends TextInputFormatter {
 }
 
 class _PostComposer extends StatefulWidget {
-  const _PostComposer({this.pickImage, required this.author, this.userCourse});
+  const _PostComposer({
+    this.pickImage,
+    required this.author,
+    this.userCourse,
+    this.initial,
+    this.canAnnounce = false,
+  });
   final Future<XFile?> Function()? pickImage;
   final String author;
   final int? userCourse;
+  final Post? initial;
+  final bool canAnnounce;
   @override
   State<_PostComposer> createState() => _PostComposerState();
 }
@@ -1075,6 +1159,19 @@ class _PostComposerState extends State<_PostComposer> {
   String? imageName;
   String? imageError;
   bool pickingImage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initial;
+    if (initial == null) return;
+    title.text = initial.title;
+    body.text = initial.body;
+    price.text = initial.price?.replaceAll(RegExp(r'[^0-9]'), '') ?? '';
+    category = initial.category;
+    avatar = initial.avatar;
+    audience.addAll(initial.audienceCourses);
+  }
 
   @override
   void dispose() {
@@ -1163,8 +1260,11 @@ class _PostComposerState extends State<_PostComposer> {
       Post(
         author: widget.author,
         subtitle: '',
-        isMine: true,
-        createdAt: DateTime.now(),
+        id: widget.initial?.id,
+        isMine: widget.initial?.isMine ?? true,
+        likes: widget.initial?.likes ?? 0,
+        liked: widget.initial?.liked ?? false,
+        createdAt: widget.initial?.createdAt ?? DateTime.now(),
         audienceCourses: audience.toList()..sort(),
         title: title.text.trim(),
         body: body.text.trim(),
@@ -1176,6 +1276,7 @@ class _PostComposerState extends State<_PostComposer> {
             ? '${price.text.trim()}₮'
             : null,
         imageBytes: imageBytes,
+        imageUrl: imageBytes == null ? widget.initial?.imageUrl : null,
         avatar: avatar,
         imageName: imageName,
       ),
@@ -1216,6 +1317,7 @@ class _PostComposerState extends State<_PostComposer> {
                         PostCategory.exchange,
                         PostCategory.rental,
                         PostCategory.question,
+                        if (widget.canAnnounce) PostCategory.teacher,
                       ]
                       .map(
                         (c) => DropdownMenuItem(value: c, child: Text(c.label)),

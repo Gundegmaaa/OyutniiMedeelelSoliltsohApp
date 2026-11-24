@@ -41,7 +41,7 @@ class CalendarEvent {
     }
   }
 
-  final String id;
+  String id;
   final String title;
   final DateTime date;
   final CalendarEventType type;

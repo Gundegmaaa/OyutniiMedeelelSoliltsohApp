@@ -76,3 +76,39 @@ class PostReaction(models.Model):
 
     def __str__(self):
         return f'{self.st_code} -> {self.post_id}'
+
+
+class CalendarEvent(models.Model):
+    EVENT_TYPES = [
+        ('exam', 'Шалгалт'),
+        ('assignment', 'Бие даалт'),
+        ('seminar', 'Семинар'),
+        ('other', 'Бусад'),
+    ]
+
+    title = models.CharField(max_length=255)
+    date = models.DateField(db_index=True)
+    event_type = models.CharField(max_length=16, choices=EVENT_TYPES)
+    notes = models.TextField(blank=True)
+    minutes = models.PositiveSmallIntegerField(null=True, blank=True)
+    created_by = models.CharField(max_length=64, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('date', 'minutes', 'title')
+
+    def __str__(self):
+        return f'{self.date}: {self.title}'
+
+
+class LessonSchedule(models.Model):
+    weekday = models.PositiveSmallIntegerField(db_index=True)
+    start_time = models.TimeField()
+    subject = models.CharField(max_length=255)
+    room = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ('weekday', 'start_time', 'subject')
+
+    def __str__(self):
+        return f'{self.weekday} {self.start_time}: {self.subject}'

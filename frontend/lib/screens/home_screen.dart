@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/calendar_event.dart';
+import '../models/lesson_schedule.dart';
 import '../services/calendar_event_store.dart';
+import '../services/lesson_schedule_api.dart';
 import '../theme.dart';
 import '../widgets/calendar_events.dart';
 import '../widgets/ui.dart';
@@ -11,22 +13,30 @@ class HomeScreen extends StatefulWidget {
     super.key,
     this.today,
     this.eventStore,
+    this.lessonApi,
+    this.role = 'student',
     this.displayName = 'Гүндэгмаа',
   });
 
   final String displayName;
   final DateTime? today;
   final CalendarEventStore? eventStore;
+  final LessonScheduleApi? lessonApi;
+  final String role;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool get _canManageSchedule =>
+      widget.role == 'teacher' || widget.role == 'admin';
+
   late final DateTime _today;
   late DateTime _selectedDate;
   late DateTime _visibleMonth;
   late final CalendarEventStore _eventStore;
+  List<List<LessonSchedule>> _lessons = List.generate(7, (_) => []);
   List<CalendarEvent> _events = [];
   bool _eventsLoading = true;
   bool _eventsSaving = false;
@@ -42,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'Бямба',
     'Ням',
   ];
-  static const _lessons = [
+  static const _sampleLessons = [
     [('09:00', 'Database', '302'), ('13:00', 'Software Engineering', '405')],
     [('10:00', 'Математик', '301')],
     [('09:00', 'OOP', '402')],
@@ -60,7 +70,45 @@ class _HomeScreenState extends State<HomeScreen> {
     _selectedDate = _today;
     _visibleMonth = DateTime(now.year, now.month);
     _eventStore = widget.eventStore ?? SharedPreferencesCalendarEventStore();
+    if (widget.lessonApi == null) {
+      _lessons = [
+        for (var day = 0; day < _sampleLessons.length; day++)
+          [
+            for (var index = 0; index < _sampleLessons[day].length; index++)
+              LessonSchedule(
+                id: 'sample-$day-$index',
+                weekday: day,
+                time: _sampleLessons[day][index].$1,
+                subject: _sampleLessons[day][index].$2,
+                room: _sampleLessons[day][index].$3,
+              ),
+          ],
+      ];
+    }
     _loadEvents();
+    _loadLessons();
+  }
+
+  Future<void> _loadLessons() async {
+    final api = widget.lessonApi;
+    if (api == null) return;
+    try {
+      final lessons = await api.list();
+      if (!mounted) return;
+      setState(() {
+        _lessons = List.generate(7, (day) {
+          final matching = lessons.where((lesson) => lesson.weekday == day).toList();
+          matching.sort((a, b) => a.time.compareTo(b.time));
+          return matching;
+        });
+      });
+    } on LessonScheduleApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    }
   }
 
   Future<void> _loadEvents() async {
@@ -131,6 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _editEvent([CalendarEvent? event]) async {
+    if (!_canManageSchedule) return;
     if (_eventsLoading || _eventsLoadFailed || _eventsSaving) return;
     if (event == null && _selectedDate.isBefore(_today)) {
       ScaffoldMessenger.of(context)
@@ -160,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _deleteEvent(CalendarEvent event) async {
+    if (!_canManageSchedule) return;
     if (_eventsSaving) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -193,6 +243,112 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _editLesson(
+    int weekday, [
+    LessonSchedule? lesson,
+    VoidCallback? refreshSheet,
+  ]) async {
+    final api = widget.lessonApi;
+    if (!_canManageSchedule || api == null) return;
+    final subject = TextEditingController(text: lesson?.subject ?? '');
+    final time = TextEditingController(text: lesson?.time ?? '09:00');
+    final room = TextEditingController(text: lesson?.room ?? '');
+    final formKey = GlobalKey<FormState>();
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(lesson == null ? 'Хичээл нэмэх' : 'Хуваарь засах'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: subject,
+                decoration: const InputDecoration(labelText: 'Хичээлийн нэр'),
+                validator: (value) => value == null || value.trim().isEmpty ? 'Нэр оруулна уу.' : null,
+              ),
+              TextFormField(
+                controller: time,
+                decoration: const InputDecoration(labelText: 'Эхлэх цаг (HH:MM)'),
+                validator: (value) => value == null || !RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(value.trim()) ? 'Цаг HH:MM байна.' : null,
+              ),
+              TextFormField(
+                controller: room,
+                decoration: const InputDecoration(labelText: 'Өрөө'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Болих')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) Navigator.pop(dialogContext, true);
+            },
+            child: const Text('Хадгалах'),
+          ),
+        ],
+      ),
+    );
+    if (save == true) {
+      try {
+        final draft = LessonSchedule(
+          id: lesson?.id ?? '',
+          weekday: weekday,
+          time: time.text.trim(),
+          subject: subject.text.trim(),
+          room: room.text.trim(),
+        );
+        final saved = lesson == null ? await api.create(draft) : await api.update(draft);
+        if (!mounted) return;
+        setState(() {
+          final day = _lessons[weekday];
+          day.removeWhere((item) => item.id == saved.id);
+          day.add(saved);
+          day.sort((a, b) => a.time.compareTo(b.time));
+        });
+        refreshSheet?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Хичээлийн хуваарь хадгалагдлаа.')),
+        );
+      } on LessonScheduleApiException catch (error) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+    subject.dispose();
+    time.dispose();
+    room.dispose();
+  }
+
+  Future<void> _deleteLesson(
+    LessonSchedule lesson, [VoidCallback? refreshSheet]
+  ) async {
+    final api = widget.lessonApi;
+    if (!_canManageSchedule || api == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Хуваарь устгах уу?'),
+        content: Text('${lesson.subject} хичээлийг устгана.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Болих')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Устгах')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await api.delete(lesson.id);
+      if (mounted) {
+        setState(() => _lessons[lesson.weekday].removeWhere((item) => item.id == lesson.id));
+        refreshSheet?.call();
+      }
+    } on LessonScheduleApiException catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 
   bool _sameDate(DateTime a, DateTime b) =>
@@ -626,14 +782,15 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             const Expanded(child: SectionTitle('Чухал өдрүүд')),
-            TextButton.icon(
-              key: const ValueKey('add-calendar-event'),
-              onPressed: _eventsLoading || _eventsLoadFailed || _eventsSaving
-                  ? null
-                  : () => _editEvent(),
-              icon: const Icon(Icons.add_rounded, size: 19),
-              label: const Text('Нэмэх'),
-            ),
+            if (_canManageSchedule)
+              TextButton.icon(
+                key: const ValueKey('add-calendar-event'),
+                onPressed: _eventsLoading || _eventsLoadFailed || _eventsSaving
+                    ? null
+                    : () => _editEvent(),
+                icon: const Icon(Icons.add_rounded, size: 19),
+                label: const Text('Нэмэх'),
+              ),
           ],
         ),
         Text(
@@ -721,6 +878,7 @@ class _HomeScreenState extends State<HomeScreen> {
           CalendarEventCard(
             event: event,
             showDate: filter != null,
+            canManage: _canManageSchedule,
             onEdit: () => _editEvent(event),
             onDelete: () => _deleteEvent(event),
           ),
@@ -1034,7 +1192,8 @@ class _HomeScreenState extends State<HomeScreen> {
     useSafeArea: true,
     showDragHandle: true,
     constraints: const BoxConstraints(maxWidth: 600),
-    builder: (context) {
+    builder: (context) => StatefulBuilder(
+      builder: (context, refreshSheet) {
       final theme = Theme.of(context);
       final dark = theme.brightness == Brightness.dark;
       return ConstrainedBox(
@@ -1062,16 +1221,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             for (var day = 0; day < _weekdays.length; day++) ...[
-              _weekScheduleDay(context, day, dark),
+              _weekScheduleDay(context, day, dark, refreshSheet),
               const SizedBox(height: 10),
             ],
           ],
         ),
       );
-    },
+      },
+    ),
   );
 
-  Widget _weekScheduleDay(BuildContext context, int day, bool dark) {
+  Widget _weekScheduleDay(
+    BuildContext context,
+    int day,
+    bool dark,
+    StateSetter refreshSheet,
+  ) {
     final theme = Theme.of(context);
     final isToday = _today.weekday - 1 == day;
     final lessons = _lessons[day];
@@ -1125,6 +1290,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+              if (_canManageSchedule)
+                IconButton(
+                  tooltip: 'Хичээл нэмэх',
+                  onPressed: () => _editLesson(day, null, () => refreshSheet(() {})),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1139,29 +1310,48 @@ class _HomeScreenState extends State<HomeScreen> {
           for (final lesson in lessons)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: lesson.$1,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: lesson.time,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' • ${lesson.subject}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          if (lesson.room.isNotEmpty)
+                            TextSpan(
+                              text: ' • ${lesson.room} тоот',
+                              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                        ],
                       ),
+                      style: const TextStyle(fontSize: 13, height: 1.4),
                     ),
-                    TextSpan(
-                      text: ' • ${lesson.$2}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  if (_canManageSchedule) ...[
+                    IconButton(
+                      tooltip: 'Засах',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _editLesson(day, lesson, () => refreshSheet(() {})),
+                      icon: const Icon(Icons.edit_outlined, size: 17),
                     ),
-                    TextSpan(
-                      text: ' • ${lesson.$3} тоот',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    IconButton(
+                      tooltip: 'Устгах',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _deleteLesson(lesson, () => refreshSheet(() {})),
+                      icon: const Icon(Icons.delete_outline, size: 17),
                     ),
                   ],
-                ),
-                style: const TextStyle(fontSize: 13, height: 1.4),
+                ],
               ),
             ),
         ],
@@ -1169,7 +1359,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _lessonCard((String, String, String) lesson, int index, bool dark) {
+  Widget _lessonCard(LessonSchedule lesson, int index, bool dark) {
     final accent = index.isEven ? AppColors.purple : const Color(0xFF199C83);
     final pale = index.isEven
         ? const Color(0xFFF0E9FF)
@@ -1201,7 +1391,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  lesson.$1,
+                  lesson.time,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -1217,7 +1407,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  lesson.$2,
+                  lesson.subject,
                   style: const TextStyle(
                     fontSize: 15,
                     height: 1.3,
@@ -1231,7 +1421,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 3),
                     Flexible(
                       child: Text(
-                        '${lesson.$3} тоот',
+                        lesson.room.isEmpty ? 'Өрөө тодорхойгүй' : '${lesson.room} тоот',
                         style: const TextStyle(
                           color: AppColors.muted,
                           fontSize: 12,

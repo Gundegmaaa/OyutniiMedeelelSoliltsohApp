@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import TblUser
+from .models import TblUser, role_for_student
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def _user_payload(user):
         "last_name": last_name,
         "student_code": user.st_code,
         "course": user.course_id,
-        "role": "student",
+        "role": role_for_student(user.st_code),
         "email_verified": True,
     }
 

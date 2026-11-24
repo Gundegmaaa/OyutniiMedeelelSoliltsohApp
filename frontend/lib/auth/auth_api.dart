@@ -41,6 +41,8 @@ class AuthApi {
   final http.Client _client;
   String? _csrfToken;
 
+  http.Client get client => _client;
+
   static const _requestTimeout = Duration(seconds: 20);
 
   Future<AuthUser?> currentUser() async {

@@ -63,3 +63,31 @@ class TblUser(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class UserRole(models.Model):
+    ROLE_CHOICES = [
+        ("student", "Оюутан"),
+        ("teacher", "Багш"),
+        ("admin", "Сургалтын алба"),
+    ]
+
+    st_code = models.CharField(max_length=50, unique=True)
+    role = models.CharField(
+        max_length=16,
+        choices=ROLE_CHOICES,
+        default="student",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "login_userrole"
+
+    def __str__(self):
+        return f"{self.st_code}: {self.role}"
+
+
+def role_for_student(st_code):
+    return UserRole.objects.filter(st_code=st_code).values_list(
+        "role", flat=True
+    ).first() or "student"

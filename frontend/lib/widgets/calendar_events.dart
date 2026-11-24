@@ -445,10 +445,12 @@ class CalendarEventCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.showDate = false,
+    this.canManage = true,
   });
 
   final CalendarEvent event;
   final bool showDate;
+  final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -482,7 +484,7 @@ class CalendarEventCard extends StatelessWidget {
                   ),
                 ),
               ),
-              IconButton(
+              if (canManage) IconButton(
                 key: ValueKey('edit-event-${event.id}'),
                 onPressed: onEdit,
                 tooltip: 'Тэмдэглэл засах',
@@ -490,7 +492,7 @@ class CalendarEventCard extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
                 visualDensity: VisualDensity.compact,
               ),
-              IconButton(
+              if (canManage) IconButton(
                 key: ValueKey('delete-event-${event.id}'),
                 onPressed: onDelete,
                 tooltip: 'Тэмдэглэл устгах',

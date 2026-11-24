@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import 'auth/auth_api.dart';
 import 'auth/auth_user.dart';
 import 'models/learning.dart';
 import 'screens/auth_screen.dart';
+import 'screens/admin_screen.dart';
 import 'screens/community_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/learning_screen.dart';
 import 'services/post_api.dart';
+import 'services/admin_api.dart';
+import 'services/calendar_event_api_store.dart';
+import 'services/lesson_schedule_api.dart';
 import 'theme.dart';
 
 void main() => runApp(const StudentHubApp());
@@ -132,6 +137,7 @@ class _StudentHubAppState extends State<StudentHubApp> {
           key: ValueKey(user.id),
           user: user,
           postApi: widget.postApi,
+          apiClient: _api.client,
           onLogout: _logout,
           dark: dark,
           toggleTheme: () => setState(() => dark = !dark),
@@ -167,8 +173,10 @@ class StudentHub extends StatefulWidget {
     required this.user,
     required this.onLogout,
     this.postApi,
+    this.apiClient,
   });
   final PostApi? postApi;
+  final http.Client? apiClient;
   final AuthUser user;
   final Future<void> Function() onLogout;
   final bool dark;
@@ -179,16 +187,22 @@ class StudentHub extends StatefulWidget {
 
 class _StudentHubState extends State<StudentHub> {
   late final PostApi _postApi;
+  late final bool _ownsPostApi;
+  late final CalendarEventApiStore _calendarStore;
+  late final LessonScheduleApi _lessonApi;
 
   @override
   void initState() {
     super.initState();
-    _postApi = widget.postApi ?? PostApi();
+    _ownsPostApi = widget.postApi == null && widget.apiClient == null;
+    _postApi = widget.postApi ?? PostApi(client: widget.apiClient);
+    _calendarStore = CalendarEventApiStore(client: widget.apiClient);
+    _lessonApi = LessonScheduleApi(client: widget.apiClient);
   }
 
   @override
   void dispose() {
-    if (widget.postApi == null) _postApi.close();
+    if (_ownsPostApi) _postApi.close();
     super.dispose();
   }
 
@@ -249,6 +263,27 @@ class _StudentHubState extends State<StudentHub> {
             'admin' => 'Админ',
             _ => 'Оюутан',
           }, style: const TextStyle(color: AppColors.blue)),
+          if (widget.user.role == 'admin') ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('open-admin-tools'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(this.context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AdminScreen(
+                        api: AdminApi(client: widget.apiClient),
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.admin_panel_settings_outlined),
+                label: const Text('Хэрэглэгчийн эрх удирдах'),
+              ),
+            ),
+          ],
           const SizedBox(height: 22),
           const Text(
             'Мандах Их Сургууль',
@@ -447,6 +482,9 @@ class _StudentHubState extends State<StudentHub> {
                 displayName: widget.user.firstName.isEmpty
                     ? widget.user.displayName
                     : widget.user.firstName,
+                role: widget.user.role,
+                eventStore: _calendarStore,
+                lessonApi: _lessonApi,
               ),
               CommunityScreen(
                 key: communityKey,
@@ -455,6 +493,7 @@ class _StudentHubState extends State<StudentHub> {
                     ? widget.user.displayName
                     : widget.user.firstName,
                 userCourse: widget.user.course,
+                role: widget.user.role,
               ),
               LearningScreen(
                 progress: progress,

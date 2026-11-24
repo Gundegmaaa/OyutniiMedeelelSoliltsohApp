@@ -32,6 +32,7 @@ class PostApi {
 
   final String _baseUrl;
   final http.Client _client;
+  String? _csrfToken;
   static const _timeout = Duration(seconds: 25);
 
   Uri get _uri => Uri.parse('$_baseUrl/api/v1/posts/');
@@ -58,26 +59,8 @@ class PostApi {
 
   /// Saves the post and returns its server id.
   Future<int?> createPost(Post post) async {
-    final request = http.MultipartRequest('POST', _uri)
-      ..headers['Accept'] = 'application/json'
-      ..fields['title'] = post.title
-      ..fields['content'] = post.body
-      ..fields['post_type'] = _postType(post.category)
-      ..fields['audience_courses'] = post.audienceCourses.join(',');
-
-    final numericPrice = post.price?.replaceAll(RegExp(r'[^0-9.]'), '');
-    if (numericPrice != null && numericPrice.isNotEmpty) {
-      request.fields['price'] = numericPrice;
-    }
-    if (post.imageBytes != null) {
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'image',
-          post.imageBytes!,
-          filename: post.imageName ?? 'post-image.jpg',
-        ),
-      );
-    }
+    await _ensureCsrf();
+    final request = _postRequest('POST', post);
 
     final response = await _send(
       () async => http.Response.fromStream(await _client.send(request)),
@@ -98,12 +81,74 @@ class PostApi {
     }
   }
 
+  Future<void> updatePost(Post post) async {
+    await _ensureCsrf();
+    final id = post.id;
+    if (id == null) throw const PostApiException('Энэ зар серверт хадгалагдаагүй байна.');
+    final response = await _send(
+      () async => http.Response.fromStream(
+        await _client.send(_postRequest('PATCH', post, id: id)),
+      ),
+      timeoutMessage: 'Хүсэлт удаж байна. Дахин оролдоно уу.',
+    );
+    if (response.statusCode != 200) {
+      throw PostApiException(
+        _errorMessage(response, 'Зар засахад алдаа гарлаа'),
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<void> deletePost(int id) async {
+    await _ensureCsrf();
+    final response = await _send(
+      () => _client.delete(
+        Uri.parse('$_baseUrl/api/v1/posts/$id/'),
+        headers: {'Accept': 'application/json', 'X-CSRFToken': _csrfToken!},
+      ),
+    );
+    if (response.statusCode != 204) {
+      throw PostApiException(
+        _errorMessage(response, 'Зар устгахад алдаа гарлаа'),
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  http.MultipartRequest _postRequest(String method, Post post, {int? id}) {
+    final uri = id == null ? _uri : Uri.parse('$_baseUrl/api/v1/posts/$id/');
+    final request = http.MultipartRequest(method, uri)
+      ..headers['Accept'] = 'application/json'
+      ..headers['X-CSRFToken'] = _csrfToken!
+      ..fields['title'] = post.title
+      ..fields['content'] = post.body
+      ..fields['post_type'] = _postType(post.category)
+      ..fields['audience_courses'] = post.audienceCourses.join(',');
+
+    final numericPrice = post.price?.replaceAll(RegExp(r'[^0-9.]'), '');
+    if (numericPrice != null && numericPrice.isNotEmpty) {
+      request.fields['price'] = numericPrice;
+    }
+    if (post.imageBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'image',
+          post.imageBytes!,
+          filename: post.imageName ?? 'post-image.jpg',
+        ),
+      );
+    }
+
+    return request;
+  }
+
   /// Adds or removes the signed-in student's reaction.
   Future<LikeState> toggleLike(int postId) async {
+    await _ensureCsrf();
     final response = await _send(
       () => _client.post(
         Uri.parse('$_baseUrl/api/v1/posts/$postId/like/'),
-        headers: const {'Accept': 'application/json'},
+        headers: {'Accept': 'application/json', 'X-CSRFToken': _csrfToken!},
       ),
     );
     if (response.statusCode != 200) {
@@ -117,6 +162,27 @@ class PostApi {
       return (liked: body['liked'] as bool, count: body['like_count'] as int);
     } on FormatException {
       throw const PostApiException('Backend буруу хариу буцаалаа.');
+    }
+  }
+
+  Future<void> _ensureCsrf() async {
+    if (_csrfToken != null) return;
+    try {
+      final response = await _client
+          .get(Uri.parse('$_baseUrl/api/v1/auth/csrf/'))
+          .timeout(_timeout);
+      if (response.statusCode != 200) {
+        throw const PostApiException('CSRF баталгаажуулалтын мэдээлэл авч чадсангүй.');
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      _csrfToken = data['csrf_token'] as String?;
+      if (_csrfToken == null) {
+        throw const PostApiException('CSRF баталгаажуулалтын мэдээлэл хоосон байна.');
+      }
+    } on TimeoutException {
+      throw const PostApiException('Серверийн хариу удаж байна.');
+    } on http.ClientException {
+      throw const PostApiException('Backend сервертэй холбогдож чадсангүй.');
     }
   }
 
