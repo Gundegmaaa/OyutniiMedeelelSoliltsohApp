@@ -129,6 +129,13 @@ class _AuthScreenState extends State<AuthScreen> {
     if (value == null || value.trim().isEmpty) {
       return 'Мэйл хаягаа оруулна уу.';
     }
+    if (_mode == _AuthMode.login) {
+      final identifier = value.trim();
+      if (identifier.length <= 150 && !RegExp(r'\s').hasMatch(identifier)) {
+        return null;
+      }
+      return 'Мэйл хаяг эсвэл админы username оруулна уу.';
+    }
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim())) {
       return 'Зөв мэйл хаяг оруулна уу.';
     }
@@ -668,8 +675,10 @@ class _AuthScreenState extends State<AuthScreen> {
                   decoration: InputDecoration(
                     labelText: _mode == _AuthMode.register
                         ? 'Оюутны мэйл'
-                        : 'Мэйл хаяг',
-                    hintText: 'student@example.com',
+                        : 'Мэйл эсвэл админы username',
+                    hintText: _mode == _AuthMode.register
+                        ? 'student@example.com'
+                        : 'superuser-ийн username эсвэл мэйл',
                     prefixIcon: const Icon(Icons.alternate_email),
                     errorText: _fieldError('email'),
                     errorMaxLines: 4,
